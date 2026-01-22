@@ -18,12 +18,18 @@ ARG USER_GID=${USER_UID}
 RUN groupadd --gid ${USER_GID} ${USERNAME} \
     && useradd --uid ${USER_UID} --gid ${USER_GID} -m ${USERNAME}
 
-# Copy claude binary to a shared location
-RUN cp /root/.local/bin/claude /usr/local/bin/claude
+# Set up claude for the non-root user
+# Create ~/.local/bin and copy claude there (expected by native install detection)
+RUN mkdir -p /home/${USERNAME}/.local/bin \
+    && cp /root/.local/bin/claude /home/${USERNAME}/.local/bin/claude \
+    && chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}/.local
 
 # Create necessary directories
 RUN mkdir -p /workspace /home/${USERNAME}/.claude \
     && chown -R ${USERNAME}:${USERNAME} /workspace /home/${USERNAME}/.claude
+
+# Set PATH for the claude user
+ENV PATH="/home/${USERNAME}/.local/bin:${PATH}"
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
