@@ -78,18 +78,21 @@ func GetContainerSpec(token string, sessionID string, settingsPath string, homeD
 		return docker.ContainerSpec{}, fmt.Errorf("failed to create cckit directory: %w", err)
 	}
 
-	claudeJsonPath, err := ensureClaudeJson(homeDir, cckitDir)
+	claudeJsonPath, err := ensureClaudeJson(cckitDir)
 	if err != nil {
 		return docker.ContainerSpec{}, err
 	}
 
 	claudeDir := filepath.Join(homeDir, ".claude")
 
+	// Container runs as user "claude" with home at /home/claude
+	containerHome := "/home/claude"
+
 	mounts := []docker.Mount{
 		// .claude.json for configuration (file created by ensureClaudeJson)
-		{Host: claudeJsonPath, Container: "/root/.claude.json", ReadOnly: false},
+		{Host: claudeJsonPath, Container: containerHome + "/.claude.json", ReadOnly: false},
 		// Mount entire ~/.claude as read-write
-		{Host: claudeDir, Container: "/root/.claude", ReadOnly: false},
+		{Host: claudeDir, Container: containerHome + "/.claude", ReadOnly: false},
 		// Mount cwd
 		{Host: cwd, Container: cwd, ReadOnly: false},
 	}
@@ -110,22 +113,22 @@ func GetContainerSpec(token string, sessionID string, settingsPath string, homeD
 		{Name: "CLAUDE_CODE_OAUTH_TOKEN", Value: token},
 	}
 
-	var args []string
+	var cliArgs []string
 	if settingsPath != "" {
-		args = append(args, "--settings", "/tmp/ccyolo-settings.json")
+		cliArgs = append(cliArgs, "--settings", "/tmp/ccyolo-settings.json")
 	}
 	if sessionID != "" {
-		args = append(args, "--session-id", sessionID)
+		cliArgs = append(cliArgs, "--session-id", sessionID)
 	}
 
 	// Append extra args after our hardcoded args
-	args = append(args, extraArgs...)
+	cliArgs = append(cliArgs, extraArgs...)
 
 	return docker.ContainerSpec{
 		ImageName: "ccyolo",
 		Mounts:    mounts,
 		Env:       env,
-		Args:      args,
+		Args:      cliArgs,
 		Command:   "claude",
 		WorkDir:   cwd,
 	}, nil
@@ -140,22 +143,14 @@ func cwdToProjectPath(cwd string) string {
 	return result
 }
 
-// ensureClaudeJson ensures the .claude.json file exists in the cckit directory.
-// It copies the user's existing ~/.claude.json if it exists, otherwise creates an empty one.
-func ensureClaudeJson(homeDir, cckitDir string) (string, error) {
+// ensureClaudeJson ensures the .claude.json file exists in the cckit directory
+// with the required flags to skip prompts.
+func ensureClaudeJson(cckitDir string) (string, error) {
 	claudeJsonPath := filepath.Join(cckitDir, ".claude.json")
 
-	if _, err := os.Stat(claudeJsonPath); os.IsNotExist(err) {
-		userClaudeJson := filepath.Join(homeDir, ".claude.json")
-		if data, err := os.ReadFile(userClaudeJson); err == nil {
-			if err := os.WriteFile(claudeJsonPath, data, 0644); err != nil {
-				return "", fmt.Errorf("failed to copy .claude.json: %w", err)
-			}
-		} else {
-			if err := os.WriteFile(claudeJsonPath, []byte("{}"), 0644); err != nil {
-				return "", fmt.Errorf("failed to create .claude.json: %w", err)
-			}
-		}
+	content := `{"bypassPermissionsModeAccepted": true, "hasCompletedOnboarding": true}`
+	if err := os.WriteFile(claudeJsonPath, []byte(content), 0644); err != nil {
+		return "", fmt.Errorf("failed to write .claude.json: %w", err)
 	}
 
 	return claudeJsonPath, nil

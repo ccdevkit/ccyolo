@@ -49,11 +49,15 @@ func (s *Session) SettingsPath() string {
 }
 
 // WriteSettings generates the settings.json file with the statusline command
-// configured to communicate with the host via TCP using host.docker.internal
+// configured to communicate with the host via TCP using host.docker.internal,
+// and sets bypassPermissions mode (the whole point of ccyolo)
 func (s *Session) WriteSettings(port int) error {
 	// Pipe stdin directly to the host server via nc
 	// -N shuts down the network socket after EOF on stdin
 	content := fmt.Sprintf(`{
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  },
   "statusLine": {
     "type": "command",
     "command": "nc -N host.docker.internal %d"
