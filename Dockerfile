@@ -4,7 +4,9 @@ WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/ccproxy ./cmd/ccproxy
+COPY cmd/ccdebug ./cmd/ccdebug
 RUN CGO_ENABLED=0 go build -o ccproxy ./cmd/ccproxy
+RUN CGO_ENABLED=0 go build -o ccdebug ./cmd/ccdebug
 
 FROM node:22-slim
 
@@ -18,8 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
-# Copy ccproxy binary from builder
+# Copy binaries from builder
 COPY --from=builder /build/ccproxy /usr/local/bin/ccproxy
+COPY --from=builder /build/ccdebug /usr/local/bin/ccdebug
 
 # Create hijacker directory (will be populated at runtime by ccproxy --setup)
 # This gets chown'd to the claude user later after user is created

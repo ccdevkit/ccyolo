@@ -129,7 +129,7 @@ func GetContainerSpec(token string, sessionID string, settingsPath string, proxy
 	mounts = append(mounts, extraMounts...)
 
 	env := []docker.EnvVar{
-		{Name: "CLAUDE_CODE_OAUTH_TOKEN", Value: token},
+		{Name: "CLAUDE_CODE_OAUTH_TOKEN", Value: token, Secret: true},
 	}
 
 	var cliArgs []string

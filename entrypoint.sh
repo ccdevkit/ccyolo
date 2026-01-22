@@ -13,8 +13,12 @@ fi
 # Run ccproxy setup to create hijacker scripts if config exists
 # Only run once after switching from root to claude user
 if [ -n "$CCYOLO_NEEDS_SETUP" ] && [ -f /tmp/ccyolo-proxy.json ]; then
+    ccdebug "Running ccproxy --setup"
     ccproxy --setup
+    ccdebug "ccproxy setup complete"
 fi
+
+ccdebug "Starting: $@"
 
 # Execute the command
 exec "$@"

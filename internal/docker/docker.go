@@ -19,8 +19,9 @@ type Mount struct {
 
 // EnvVar represents an environment variable
 type EnvVar struct {
-	Name  string
-	Value string
+	Name   string
+	Value  string
+	Secret bool // If true, value is redacted in logs
 }
 
 // ContainerSpec defines everything needed to run a container
@@ -68,10 +69,16 @@ func RunSpec(spec ContainerSpec, debug DebugFunc) error {
 	}
 
 	args := []string{"run", "-it", "--rm"}
+	logArgs := []string{"run", "-it", "--rm"} // redacted version for logging
 
 	// Add environment variables
 	for _, env := range spec.Env {
 		args = append(args, "-e", env.Name+"="+env.Value)
+		if env.Secret {
+			logArgs = append(logArgs, "-e", env.Name+"=***")
+		} else {
+			logArgs = append(logArgs, "-e", env.Name+"="+env.Value)
+		}
 	}
 
 	// Add mounts
@@ -81,29 +88,34 @@ func RunSpec(spec ContainerSpec, debug DebugFunc) error {
 			mountArg += ":ro"
 		}
 		args = append(args, "-v", mountArg)
+		logArgs = append(logArgs, "-v", mountArg)
 		debug("Mount: %s -> %s (ro=%v)", m.Host, m.Container, m.ReadOnly)
 	}
 
 	// Add working directory
 	if spec.WorkDir != "" {
 		args = append(args, "-w", spec.WorkDir)
+		logArgs = append(logArgs, "-w", spec.WorkDir)
 	}
 
 	// Add image and command
 	args = append(args, spec.ImageName)
+	logArgs = append(logArgs, spec.ImageName)
 	if spec.Command != "" {
 		args = append(args, spec.Command)
+		logArgs = append(logArgs, spec.Command)
 	}
 
 	// Add command args
 	args = append(args, spec.Args...)
+	logArgs = append(logArgs, spec.Args...)
 
 	cmd := exec.Command("docker", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	debug("Running docker command: %v", cmd.Args)
+	debug("Running docker command: %v", append([]string{"docker"}, logArgs...))
 	err := cmd.Run()
 	debug("Docker command finished")
 

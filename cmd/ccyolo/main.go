@@ -38,10 +38,10 @@ func initLogger() (*os.File, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to open log file: %w", err)
 		}
-		logger = log.New(f, "", log.LstdFlags)
+		logger = log.New(f, "", log.LstdFlags|log.Lmicroseconds)
 		return f, nil
 	}
-	logger = log.New(os.Stderr, "", log.LstdFlags)
+	logger = log.New(os.Stderr, "", log.LstdFlags|log.Lmicroseconds)
 	return nil, nil
 }
 
@@ -183,17 +183,17 @@ func main() {
 	}
 	debug("Settings written to: %s", sess.SettingsPath())
 
-	// Write proxy config and system prompt if we have passthrough patterns
-	proxyConfigPath := ""
+	// Always write proxy config (needed for ccdebug even without passthrough)
+	if err := sess.WriteProxyConfig(server.Port(), passthrough, verbose); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing proxy config: %v\n", err)
+		os.Exit(1)
+	}
+	proxyConfigPath := sess.ProxyConfigPath()
+	debug("Proxy config written to: %s", proxyConfigPath)
+
+	// Write system prompt only if we have passthrough patterns
 	systemPromptPath := ""
 	if len(passthrough) > 0 {
-		if err := sess.WriteProxyConfig(server.Port(), passthrough, verbose); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing proxy config: %v\n", err)
-			os.Exit(1)
-		}
-		proxyConfigPath = sess.ProxyConfigPath()
-		debug("Proxy config written to: %s", proxyConfigPath)
-
 		if err := sess.WriteSystemPrompt(passthrough); err != nil {
 			fmt.Fprintf(os.Stderr, "Error writing system prompt: %v\n", err)
 			os.Exit(1)
