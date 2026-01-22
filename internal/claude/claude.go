@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -78,7 +79,7 @@ func GetContainerSpec(token string, sessionID string, settingsPath string, proxy
 		return docker.ContainerSpec{}, fmt.Errorf("failed to create cckit directory: %w", err)
 	}
 
-	claudeJsonPath, err := ensureClaudeJson(cckitDir)
+	claudeJsonPath, err := ensureClaudeJson(cckitDir, homeDir)
 	if err != nil {
 		return docker.ContainerSpec{}, err
 	}
@@ -165,12 +166,38 @@ func cwdToProjectPath(cwd string) string {
 }
 
 // ensureClaudeJson ensures the .claude.json file exists in the cckit directory
-// with the required flags to skip prompts.
-func ensureClaudeJson(cckitDir string) (string, error) {
+// with the required flags to skip prompts. Only creates if it doesn't exist.
+func ensureClaudeJson(cckitDir string, homeDir string) (string, error) {
 	claudeJsonPath := filepath.Join(cckitDir, ".claude.json")
 
-	content := `{"bypassPermissionsModeAccepted": true, "hasCompletedOnboarding": true}`
-	if err := os.WriteFile(claudeJsonPath, []byte(content), 0644); err != nil {
+	// If file already exists, don't overwrite it
+	if _, err := os.Stat(claudeJsonPath); err == nil {
+		return claudeJsonPath, nil
+	}
+
+	// Start with required flags
+	config := map[string]any{
+		"bypassPermissionsModeAccepted": true,
+		"hasCompletedOnboarding":        true,
+	}
+
+	// Try to read oauthAccount from host's .claude.json to preserve subscription tier
+	hostClaudeJson := filepath.Join(homeDir, ".claude.json")
+	if data, err := os.ReadFile(hostClaudeJson); err == nil {
+		var hostConfig map[string]any
+		if err := json.Unmarshal(data, &hostConfig); err == nil {
+			if oauthAccount, ok := hostConfig["oauthAccount"]; ok {
+				config["oauthAccount"] = oauthAccount
+			}
+		}
+	}
+
+	content, err := json.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal .claude.json: %w", err)
+	}
+
+	if err := os.WriteFile(claudeJsonPath, content, 0644); err != nil {
 		return "", fmt.Errorf("failed to write .claude.json: %w", err)
 	}
 
