@@ -73,7 +73,7 @@ func CaptureToken(debug DebugFunc) (string, error) {
 }
 
 // GetContainerSpec returns a ContainerSpec configured for running Claude in a container
-func GetContainerSpec(token string, sessionID string, settingsPath string, proxyConfigPath string, systemPromptPath string, homeDir string, cwd string, extraArgs []string, extraMounts []docker.Mount) (docker.ContainerSpec, error) {
+func GetContainerSpec(token string, settingsPath string, proxyConfigPath string, systemPromptPath string, homeDir string, cwd string, extraArgs []string, extraMounts []docker.Mount) (docker.ContainerSpec, error) {
 	cckitDir := filepath.Join(homeDir, ".cckit", "ccyolo")
 	if err := os.MkdirAll(cckitDir, 0755); err != nil {
 		return docker.ContainerSpec{}, fmt.Errorf("failed to create cckit directory: %w", err)
@@ -138,9 +138,6 @@ func GetContainerSpec(token string, sessionID string, settingsPath string, proxy
 	}
 	if systemPromptPath != "" {
 		cliArgs = append(cliArgs, "--append-system-prompt-file", "/tmp/ccyolo-system-prompt.md")
-	}
-	if sessionID != "" {
-		cliArgs = append(cliArgs, "--session-id", sessionID)
 	}
 
 	// Append extra args after our hardcoded args

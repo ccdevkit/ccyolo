@@ -167,34 +167,31 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error processing arguments: %v\n", err)
 		os.Exit(1)
 	}
-	debug("Processed args: SessionID=%s, PassArgs=%v, ExtraMounts=%d", processed.SessionID, processed.PassArgs, len(processed.ExtraMounts))
+	debug("Processed args: PassArgs=%v, ExtraMounts=%d", processed.PassArgs, len(processed.ExtraMounts))
 
-	// Use provided session ID or create new session
-	var sess *session.Session
-	if processed.SessionID != "" {
-		debug("Using provided session ID: %s", processed.SessionID)
-		sess, err = session.WithID(processed.SessionID)
-	} else {
-		sess, err = session.New()
+	// Get cwd early
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting working directory: %v\n", err)
+		os.Exit(1)
 	}
+
+	// Create our temp session (always with a new UUID for our files)
+	// Note: We never pass --session-id to Claude - it manages its own sessions.
+	// Our temp dir UUID is just for organizing ccyolo's ephemeral files.
+	sess, err := session.New()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating session: %v\n", err)
 		os.Exit(1)
 	}
 	defer sess.Cleanup()
-	debug("Session created: %s", sess.ID())
+	debug("Temp session created: %s", sess.ID())
 	debug("Session temp dir: %s", sess.TempDir())
 
-	// Get home and working directories for the hostexec server
+	// Get home directory for the hostexec server
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting home directory: %v\n", err)
-		os.Exit(1)
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting working directory: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -239,7 +236,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	spec, err := claude.GetContainerSpec(token, sess.ID(), sess.SettingsPath(), proxyConfigPath, systemPromptPath, homeDir, cwd, processed.PassArgs, processed.ExtraMounts)
+	spec, err := claude.GetContainerSpec(token, sess.SettingsPath(), proxyConfigPath, systemPromptPath, homeDir, cwd, processed.PassArgs, processed.ExtraMounts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating container spec: %v\n", err)
 		os.Exit(1)
