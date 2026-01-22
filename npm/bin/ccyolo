@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+
+const { spawn } = require('child_process');
+const path = require('path');
+
+const binaryPath = path.join(__dirname, 'ccyolo');
+
+const child = spawn(binaryPath, process.argv.slice(2), {
+  stdio: 'inherit',
+  env: process.env,
+});
+
+child.on('error', (err) => {
+  if (err.code === 'ENOENT') {
+    console.error('ccyolo binary not found. Try reinstalling: npm install -g @cckit/ccyolo');
+  } else {
+    console.error(`Failed to run ccyolo: ${err.message}`);
+  }
+  process.exit(1);
+});
+
+child.on('exit', (code, signal) => {
+  if (signal) {
+    process.exit(1);
+  }
+  process.exit(code ?? 0);
+});

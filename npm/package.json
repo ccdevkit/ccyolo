@@ -1,0 +1,40 @@
+{
+  "name": "@cckit/ccyolo",
+  "version": "0.1.0",
+  "description": "Run Claude Code in a Docker container with YOLO mode enabled",
+  "bin": {
+    "ccyolo": "bin/ccyolo"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sullivandigital/cckit.git",
+    "directory": "ccyolo"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "docker",
+    "ai",
+    "cli"
+  ],
+  "author": "Sullivan Digital",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/sullivandigital/cckit/issues"
+  },
+  "homepage": "https://github.com/sullivandigital/cckit/tree/main/ccyolo#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}
