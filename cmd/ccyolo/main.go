@@ -45,73 +45,104 @@ func initLogger() (*os.File, error) {
 	return nil, nil
 }
 
+func printHelp() {
+	fmt.Print(`ccyolo - Run Claude Code in a Docker container
+
+Usage:
+  ccyolo [ccyolo-flags] -- [claude-args]
+  ccyolo [claude-args]
+
+If "--" is present, arguments before it are for ccyolo, after are for claude.
+If "--" is absent, all arguments are passed to claude.
+
+To see claude's help: ccyolo -- --help
+
+ccyolo flags:
+  -v, --verbose         Enable debug logging to stderr
+  --log <path>          Write debug logs to file (implies -v)
+  --passthrough <cmd>   Run commands matching prefix on host (repeatable)
+  -pt <cmd>             Short for --passthrough
+
+Examples:
+  ccyolo                          Start claude interactively
+  ccyolo -p "hello"               Pass prompt to claude
+  ccyolo -v -- -p "hello"         Debug mode with prompt
+  ccyolo --log /tmp/debug.log --  Log to file
+  ccyolo --pt git -- -p "status"  Run git commands on host
+`)
+}
+
+// splitArgs splits arguments at "--" separator.
+// Returns (ccyoloArgs, claudeArgs).
+// If "--" is not present, all args go to claude.
+func splitArgs(args []string) (ccyoloArgs []string, claudeArgs []string) {
+	for i, arg := range args {
+		if arg == "--" {
+			return args[:i], args[i+1:]
+		}
+	}
+	// No "--" found, all args go to claude
+	return nil, args
+}
+
 func debug(format string, args ...any) {
 	if verbose {
 		logger.Printf("[DEBUG] "+format, args...)
 	}
 }
 
-// ccyoloFlagsWithValues lists ccyolo flags that take a value argument
-var ccyoloFlagsWithValues = map[string]bool{
-	"pt":          true,
-	"passthrough": true,
-	"log":         true,
-}
+// parseCcyoloFlags parses ccyolo-specific flags using the flag package.
+// Returns true if the program should exit (e.g., --help was shown).
+func parseCcyoloFlags(args []string) bool {
+	fs := flag.NewFlagSet("ccyolo", flag.ContinueOnError)
+	fs.Usage = func() {} // Suppress default usage, we handle --help ourselves
 
-// extractCcyoloFlags separates --y:* and -y:* args from claude args
-// Returns (ccyolo args with prefix stripped, claude args)
-func extractCcyoloFlags(args []string) (ccyoloArgs []string, claudeArgs []string) {
-	expectValue := false
-	for _, arg := range args {
-		if expectValue {
-			// This arg is a value for a previous ccyolo flag
-			ccyoloArgs = append(ccyoloArgs, arg)
-			expectValue = false
-			continue
-		}
-
-		if strings.HasPrefix(arg, "--y:") {
-			stripped := "--" + strings.TrimPrefix(arg, "--y:")
-			ccyoloArgs = append(ccyoloArgs, stripped)
-			// Check if this flag expects a value and doesn't have = in it
-			if !strings.Contains(stripped, "=") {
-				flagName := strings.TrimPrefix(stripped, "--")
-				if ccyoloFlagsWithValues[flagName] {
-					expectValue = true
-				}
-			}
-		} else if strings.HasPrefix(arg, "-y:") {
-			stripped := "-" + strings.TrimPrefix(arg, "-y:")
-			ccyoloArgs = append(ccyoloArgs, stripped)
-			// Check if this flag expects a value and doesn't have = in it
-			if !strings.Contains(stripped, "=") {
-				flagName := strings.TrimPrefix(stripped, "-")
-				if ccyoloFlagsWithValues[flagName] {
-					expectValue = true
-				}
-			}
-		} else {
-			claudeArgs = append(claudeArgs, arg)
-		}
-	}
-	return
-}
-
-// parseCcyoloFlags parses ccyolo-specific flags using the flag package
-func parseCcyoloFlags(args []string) {
-	fs := flag.NewFlagSet("ccyolo", flag.ExitOnError)
+	var showHelp bool
+	fs.BoolVar(&showHelp, "help", false, "")
+	fs.BoolVar(&showHelp, "h", false, "")
 	fs.BoolVar(&verbose, "v", false, "Enable verbose debug logging")
 	fs.BoolVar(&verbose, "verbose", false, "Enable verbose debug logging")
 	fs.StringVar(&logFile, "log", "", "Path to log file (when set with -v, logs go to file instead of stdout)")
 	fs.Var((*stringSliceFlag)(&passthrough), "pt", "Command prefix to pass through to host (can be repeated)")
 	fs.Var((*stringSliceFlag)(&passthrough), "passthrough", "Command prefix to pass through to host (can be repeated)")
-	fs.Parse(args)
+
+	if err := fs.Parse(args); err != nil {
+		// Unknown flag - print help and exit
+		printHelp()
+		os.Exit(1)
+	}
+
+	if showHelp {
+		printHelp()
+		return true
+	}
+
+	// If --log is set, enable verbose mode
+	if logFile != "" {
+		verbose = true
+	}
+
+	return false
 }
 
 func main() {
-	// Extract --ccy:* flags for ccyolo, pass the rest to claude
-	ccyoloArgs, remainingArgs := extractCcyoloFlags(os.Args[1:])
-	parseCcyoloFlags(ccyoloArgs)
+	// Check for --help before splitting (special case: no -- required)
+	for _, arg := range os.Args[1:] {
+		if arg == "--help" || arg == "-h" {
+			printHelp()
+			os.Exit(0)
+		}
+		// Stop at -- to avoid catching claude's --help
+		if arg == "--" {
+			break
+		}
+	}
+
+	// Split args at "--": before goes to ccyolo, after goes to claude
+	ccyoloArgs, remainingArgs := splitArgs(os.Args[1:])
+	if parseCcyoloFlags(ccyoloArgs) {
+		os.Exit(0)
+	}
 
 	// Initialize logger
 	logFileHandle, err := initLogger()
