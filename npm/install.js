@@ -30,7 +30,7 @@ if (!platformInfo) {
 const { goos, goarch } = platformInfo;
 const binaryName = process.platform === 'win32' ? 'ccyolo.exe' : 'ccyolo';
 const assetName = `ccyolo-${goos}-${goarch}.tar.gz`;
-const downloadUrl = `https://github.com/sullivandigital/cckit/releases/download/ccyolo-v${PACKAGE_VERSION}/${assetName}`;
+const downloadUrl = `https://github.com/ccdevkit/ccyolo/releases/download/v${PACKAGE_VERSION}/${assetName}`;
 const binDir = path.join(__dirname, 'bin');
 const binaryPath = path.join(binDir, binaryName);
 
@@ -97,7 +97,7 @@ async function install() {
     console.error(`Failed to install ccyolo: ${error.message}`);
     console.error('');
     console.error('You can manually download the binary from:');
-    console.error(`https://github.com/sullivandigital/cckit/releases/tag/ccyolo-v${PACKAGE_VERSION}`);
+    console.error(`https://github.com/ccdevkit/ccyolo/releases/tag/v${PACKAGE_VERSION}`);
     process.exit(1);
   }
 }

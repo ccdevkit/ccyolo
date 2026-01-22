@@ -72,7 +72,6 @@ jobs:
         with:
           files: artifacts/**/*.tar.gz
           generate_release_notes: true
-          tag_name: ccyolo-${{ github.ref_name }}
 
   publish-npm:
     needs: create-release

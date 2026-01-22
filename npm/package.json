@@ -1,5 +1,5 @@
 {
-  "name": "@cckit/ccyolo",
+  "name": "@ccdevkit/ccyolo",
   "version": "0.1.0",
   "description": "Run Claude Code in a Docker container with YOLO mode enabled",
   "bin": {
@@ -10,8 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sullivandigital/cckit.git",
-    "directory": "ccyolo"
+    "url": "git+https://github.com/ccdevkit/ccyolo.git"
   },
   "keywords": [
     "claude",
@@ -23,9 +22,9 @@
   "author": "Sullivan Digital",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/sullivandigital/cckit/issues"
+    "url": "https://github.com/ccdevkit/ccyolo/issues"
   },
-  "homepage": "https://github.com/sullivandigital/cckit/tree/main/ccyolo#readme",
+  "homepage": "https://github.com/ccdevkit/ccyolo#readme",
   "engines": {
     "node": ">=18"
   },
