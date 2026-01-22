@@ -134,14 +134,16 @@ jobs:
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+          # Don't set a default token - let OIDC handle auth
+          token: ''
 
       - name: Update npm package version
         working-directory: npm
         run: |
           npm version ${{ needs.version.outputs.version }} --no-git-tag-version
 
+      # Uses OIDC trusted publishing - no NPM_TOKEN needed
+      # Configure at: https://www.npmjs.com/package/@cckit/ccyolo/access
       - name: Publish to npm
         working-directory: npm
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
