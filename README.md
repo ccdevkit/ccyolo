@@ -8,6 +8,8 @@ Run Claude Code in Docker with auto-accept enabled. <i>Same CLI, no setup, full 
 <img src="screenshots/demo.gif" alt="Demo" />
 </p>
 
+> **Note:** ccyolo is a safety net, not a sandbox. It protects against accidental damage from an over-eager agent (like `rm -rf ~`), but it won't contain a fully compromised, malicious agent. Only use with repositories you trust.
+
 ## Install
 
 ```bash
