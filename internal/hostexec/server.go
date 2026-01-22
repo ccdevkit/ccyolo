@@ -1,7 +1,10 @@
 package hostexec
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"os/exec"
@@ -82,21 +85,100 @@ func (s *Server) acceptLoop() {
 	}
 }
 
+// ExecRequest is the JSON request for command execution
+type ExecRequest struct {
+	Type    string `json:"type"`
+	Command string `json:"command"`
+	Cwd     string `json:"cwd"`
+}
+
+// LogRequest is the JSON request for logging from the container
+type LogRequest struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
 func (s *Server) handleConnection(conn net.Conn) {
 	defer s.wg.Done()
 	defer conn.Close()
 
-	// Read all stdin data from the connection
-	stdinData, err := io.ReadAll(conn)
-	if err != nil {
+	// Use a buffered reader to peek at the first line
+	reader := bufio.NewReader(conn)
+
+	// Read the first line to determine the request type
+	firstLine, err := reader.ReadBytes('\n')
+	if err != nil && err != io.EOF {
 		s.debug("Read error: %v", err)
 		return
 	}
 
-	s.debug("Received %d bytes of stdin data", len(stdinData))
+	// Try to parse as JSON request
+	trimmedLine := bytes.TrimSpace(firstLine)
 
-	// Execute the statusline command with the received stdin
+	// Check for exec request
+	var execReq ExecRequest
+	if err := json.Unmarshal(trimmedLine, &execReq); err == nil && execReq.Type == "exec" {
+		s.debug("Handling exec request: %s", execReq.Command)
+		s.handleExec(conn, reader, &execReq)
+		return
+	}
+
+	// Check for log request
+	var logReq LogRequest
+	if err := json.Unmarshal(trimmedLine, &logReq); err == nil && logReq.Type == "log" {
+		s.handleLog(&logReq)
+		return
+	}
+
+	// Not a JSON request - treat as raw statusline data
+	// Prepend the first line we already read and read the rest
+	restData, _ := io.ReadAll(reader)
+	stdinData := append(firstLine, restData...)
+	s.debug("Received %d bytes of stdin data for statusline", len(stdinData))
 	s.handleStatusline(conn, stdinData)
+}
+
+func (s *Server) handleExec(conn net.Conn, reader *bufio.Reader, req *ExecRequest) {
+	s.debug("[host] Executing on host: %s (cwd: %s)", req.Command, req.Cwd)
+
+	// Execute the command on the host
+	cmd := exec.Command("sh", "-c", req.Command)
+
+	// Use the provided cwd, or fall back to server's cwd
+	if req.Cwd != "" {
+		cmd.Dir = req.Cwd
+	} else {
+		cmd.Dir = s.cwd
+	}
+
+	// Don't pipe stdin - exec commands are non-interactive
+	// If stdin were needed, CombinedOutput would block waiting for EOF
+
+	// Capture combined output
+	output, err := cmd.CombinedOutput()
+
+	// Determine exit code
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			s.debug("[host] Exec command error: %v", err)
+			exitCode = 1
+		}
+	}
+
+	s.debug("[host] Command finished with exit code %d, response %d bytes", exitCode, len(output))
+
+	// Write exit code on first line, then output
+	fmt.Fprintf(conn, "%d\n", exitCode)
+	conn.Write(output)
+}
+
+func (s *Server) handleLog(req *LogRequest) {
+	// Forward the log message to the debug function
+	// The [container] prefix distinguishes container logs from host logs
+	s.debug("[container] %s", req.Message)
 }
 
 func (s *Server) handleStatusline(conn net.Conn, stdinData []byte) {

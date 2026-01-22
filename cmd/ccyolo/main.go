@@ -15,21 +15,81 @@ import (
 )
 
 var verbose bool
+var logFile string
+var passthrough []string
+
+// stringSliceFlag allows a flag to be specified multiple times
+type stringSliceFlag []string
+
+func (s *stringSliceFlag) String() string {
+	return strings.Join(*s, ", ")
+}
+
+func (s *stringSliceFlag) Set(value string) error {
+	*s = append(*s, value)
+	return nil
+}
+
+var logger *log.Logger
+
+func initLogger() (*os.File, error) {
+	if logFile != "" {
+		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open log file: %w", err)
+		}
+		logger = log.New(f, "", log.LstdFlags)
+		return f, nil
+	}
+	logger = log.New(os.Stderr, "", log.LstdFlags)
+	return nil, nil
+}
 
 func debug(format string, args ...any) {
 	if verbose {
-		log.Printf("[DEBUG] "+format, args...)
+		logger.Printf("[DEBUG] "+format, args...)
 	}
+}
+
+// ccyoloFlagsWithValues lists ccyolo flags that take a value argument
+var ccyoloFlagsWithValues = map[string]bool{
+	"pt":          true,
+	"passthrough": true,
+	"log":         true,
 }
 
 // extractCcyoloFlags separates --y:* and -y:* args from claude args
 // Returns (ccyolo args with prefix stripped, claude args)
 func extractCcyoloFlags(args []string) (ccyoloArgs []string, claudeArgs []string) {
+	expectValue := false
 	for _, arg := range args {
+		if expectValue {
+			// This arg is a value for a previous ccyolo flag
+			ccyoloArgs = append(ccyoloArgs, arg)
+			expectValue = false
+			continue
+		}
+
 		if strings.HasPrefix(arg, "--y:") {
-			ccyoloArgs = append(ccyoloArgs, "--"+strings.TrimPrefix(arg, "--y:"))
+			stripped := "--" + strings.TrimPrefix(arg, "--y:")
+			ccyoloArgs = append(ccyoloArgs, stripped)
+			// Check if this flag expects a value and doesn't have = in it
+			if !strings.Contains(stripped, "=") {
+				flagName := strings.TrimPrefix(stripped, "--")
+				if ccyoloFlagsWithValues[flagName] {
+					expectValue = true
+				}
+			}
 		} else if strings.HasPrefix(arg, "-y:") {
-			ccyoloArgs = append(ccyoloArgs, "-"+strings.TrimPrefix(arg, "-y:"))
+			stripped := "-" + strings.TrimPrefix(arg, "-y:")
+			ccyoloArgs = append(ccyoloArgs, stripped)
+			// Check if this flag expects a value and doesn't have = in it
+			if !strings.Contains(stripped, "=") {
+				flagName := strings.TrimPrefix(stripped, "-")
+				if ccyoloFlagsWithValues[flagName] {
+					expectValue = true
+				}
+			}
 		} else {
 			claudeArgs = append(claudeArgs, arg)
 		}
@@ -42,6 +102,9 @@ func parseCcyoloFlags(args []string) {
 	fs := flag.NewFlagSet("ccyolo", flag.ExitOnError)
 	fs.BoolVar(&verbose, "v", false, "Enable verbose debug logging")
 	fs.BoolVar(&verbose, "verbose", false, "Enable verbose debug logging")
+	fs.StringVar(&logFile, "log", "", "Path to log file (when set with -v, logs go to file instead of stdout)")
+	fs.Var((*stringSliceFlag)(&passthrough), "pt", "Command prefix to pass through to host (can be repeated)")
+	fs.Var((*stringSliceFlag)(&passthrough), "passthrough", "Command prefix to pass through to host (can be repeated)")
 	fs.Parse(args)
 }
 
@@ -50,8 +113,22 @@ func main() {
 	ccyoloArgs, remainingArgs := extractCcyoloFlags(os.Args[1:])
 	parseCcyoloFlags(ccyoloArgs)
 
+	// Initialize logger
+	logFileHandle, err := initLogger()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	if logFileHandle != nil {
+		defer logFileHandle.Close()
+	}
+
 	debug("ccyolo starting")
 	debug("Remaining args: %v", remainingArgs)
+	debug("Passthrough: %v", passthrough)
+	if logFile != "" {
+		debug("Logging to: %s", logFile)
+	}
 
 	// Process args: extract session-id, find paths to bind
 	processed, err := args.Process(remainingArgs)
@@ -106,13 +183,32 @@ func main() {
 	}
 	debug("Settings written to: %s", sess.SettingsPath())
 
+	// Write proxy config and system prompt if we have passthrough patterns
+	proxyConfigPath := ""
+	systemPromptPath := ""
+	if len(passthrough) > 0 {
+		if err := sess.WriteProxyConfig(server.Port(), passthrough, verbose); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing proxy config: %v\n", err)
+			os.Exit(1)
+		}
+		proxyConfigPath = sess.ProxyConfigPath()
+		debug("Proxy config written to: %s", proxyConfigPath)
+
+		if err := sess.WriteSystemPrompt(passthrough); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing system prompt: %v\n", err)
+			os.Exit(1)
+		}
+		systemPromptPath = sess.SystemPromptPath()
+		debug("System prompt written to: %s", systemPromptPath)
+	}
+
 	token, err := claude.CaptureToken(debug)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	spec, err := claude.GetContainerSpec(token, sess.ID(), sess.SettingsPath(), homeDir, cwd, processed.PassArgs, processed.ExtraMounts)
+	spec, err := claude.GetContainerSpec(token, sess.ID(), sess.SettingsPath(), proxyConfigPath, systemPromptPath, homeDir, cwd, processed.PassArgs, processed.ExtraMounts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating container spec: %v\n", err)
 		os.Exit(1)
