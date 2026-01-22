@@ -1,8 +1,12 @@
-# ccyolo
+<h1 align="center">ccyolo</h1>
 
-Drop-in replacement for `claude` that runs in a Docker container. Same CLI, no setup.
+<p align="center">
+Run Claude Code in Docker with auto-accept enabled. <i>Same CLI, no setup, full YOLO.</i>
+</p>
 
-![Demo](screenshots/demo.gif)
+<p align="center">
+<img src="screenshots/demo.gif" alt="Demo" />
+</p>
 
 ## Install
 
