@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -138,11 +139,20 @@ func (s *Server) handleConnection(conn net.Conn) {
 	s.handleStatusline(conn, stdinData)
 }
 
+// shellCommand creates an exec.Cmd that runs the given command through the
+// platform's shell (sh -c on Unix, cmd /C on Windows)
+func shellCommand(command string) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.Command("cmd", "/C", command)
+	}
+	return exec.Command("sh", "-c", command)
+}
+
 func (s *Server) handleExec(conn net.Conn, reader *bufio.Reader, req *ExecRequest) {
 	s.debug("[host] Executing on host: %s (cwd: %s)", req.Command, req.Cwd)
 
 	// Execute the command on the host
-	cmd := exec.Command("sh", "-c", req.Command)
+	cmd := shellCommand(req.Command)
 
 	// Use the provided cwd, or fall back to server's cwd
 	if req.Cwd != "" {
@@ -193,7 +203,7 @@ func (s *Server) handleStatusline(conn net.Conn, stdinData []byte) {
 		return
 	}
 
-	cmd := exec.Command("sh", "-c", settings.StatusLine.Command)
+	cmd := shellCommand(settings.StatusLine.Command)
 	cmd.Dir = s.cwd
 	cmd.Stdin = bytes.NewReader(stdinData)
 

@@ -22,6 +22,10 @@ jobs:
             goarch: amd64
           - goos: linux
             goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
 
     steps:
       - name: Checkout
@@ -38,8 +42,12 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          go build -ldflags="-s -w" -o ccyolo ./cmd/ccyolo
-          tar -czvf ccyolo-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz ccyolo
+          BINARY_NAME="ccyolo"
+          if [ "$GOOS" = "windows" ]; then
+            BINARY_NAME="ccyolo.exe"
+          fi
+          go build -ldflags="-s -w" -o "$BINARY_NAME" ./cmd/ccyolo
+          tar -czvf ccyolo-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz "$BINARY_NAME"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

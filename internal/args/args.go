@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"ccyolo/internal/docker"
@@ -61,12 +62,24 @@ func looksLikePath(s string) bool {
 		return false
 	}
 
-	// Starts with path indicators
+	// Unix-style path indicators
 	if strings.HasPrefix(s, "/") ||
 		strings.HasPrefix(s, "./") ||
 		strings.HasPrefix(s, "../") ||
 		strings.HasPrefix(s, "~/") {
 		return true
+	}
+
+	// Windows-style paths (only check on Windows)
+	if runtime.GOOS == "windows" {
+		// Drive letter paths: C:\, D:\, etc.
+		if len(s) >= 2 && s[1] == ':' {
+			return true
+		}
+		// Relative paths with backslash: .\, ..\
+		if strings.HasPrefix(s, ".\\") || strings.HasPrefix(s, "..\\") {
+			return true
+		}
 	}
 
 	// Contains path separator

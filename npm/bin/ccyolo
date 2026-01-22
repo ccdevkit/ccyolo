@@ -3,7 +3,8 @@
 const { spawn } = require('child_process');
 const path = require('path');
 
-const binaryPath = path.join(__dirname, 'ccyolo');
+const binaryName = process.platform === 'win32' ? 'ccyolo.exe' : 'ccyolo';
+const binaryPath = path.join(__dirname, binaryName);
 
 const child = spawn(binaryPath, process.argv.slice(2), {
   stdio: 'inherit',

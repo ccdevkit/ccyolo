@@ -14,6 +14,8 @@ const PLATFORM_MAP = {
   'darwin-arm64': { goos: 'darwin', goarch: 'arm64' },
   'linux-x64': { goos: 'linux', goarch: 'amd64' },
   'linux-arm64': { goos: 'linux', goarch: 'arm64' },
+  'win32-x64': { goos: 'windows', goarch: 'amd64' },
+  'win32-arm64': { goos: 'windows', goarch: 'arm64' },
 };
 
 const platformKey = `${process.platform}-${process.arch}`;
@@ -26,7 +28,7 @@ if (!platformInfo) {
 }
 
 const { goos, goarch } = platformInfo;
-const binaryName = 'ccyolo';
+const binaryName = process.platform === 'win32' ? 'ccyolo.exe' : 'ccyolo';
 const assetName = `ccyolo-${goos}-${goarch}.tar.gz`;
 const downloadUrl = `https://github.com/sullivandigital/cckit/releases/download/ccyolo-v${PACKAGE_VERSION}/${assetName}`;
 const binDir = path.join(__dirname, 'bin');
@@ -57,11 +59,13 @@ function makeRequest(url) {
 }
 
 function extractTarGz(buffer, destDir) {
-  // Use tar command for simplicity and reliability
+  // Use tar command for extraction
+  // Windows 10+ includes tar.exe, and Git Bash/WSL also provide it
   const tarball = path.join(destDir, 'temp.tar.gz');
   fs.writeFileSync(tarball, buffer);
 
   try {
+    // Use tar command - available on Windows 10+, macOS, and Linux
     execSync(`tar -xzf "${tarball}" -C "${destDir}"`, { stdio: 'pipe' });
   } finally {
     fs.unlinkSync(tarball);
@@ -83,8 +87,10 @@ async function install() {
 
     extractTarGz(buffer, binDir);
 
-    // Make binary executable
-    fs.chmodSync(binaryPath, 0o755);
+    // Make binary executable (not needed on Windows)
+    if (process.platform !== 'win32') {
+      fs.chmodSync(binaryPath, 0o755);
+    }
 
     console.log(`Installed ccyolo to ${binaryPath}`);
   } catch (error) {
