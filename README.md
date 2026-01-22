@@ -9,7 +9,7 @@ Run Claude Code in Docker with auto-accept enabled. <i>Same CLI, no setup, full 
 </p>
 
 > [!CAUTION]
-> ccyolo is a safety net, not a sandbox. It protects against accidental damage from an over-eager agent (like `rm -rf ~`), but it won't contain a fully compromised, malicious agent. Only use with repositories you trust.
+> ccyolo is a safety net, not a sandbox. It protects against overzealous agents doing stupid things, but it won't contain a fully compromised, malicious agent. Only use with repositories you trust.
 
 ## Install
 
@@ -48,10 +48,10 @@ ccyolo --log /tmp/debug.log -- -c    # Log to file
 ccyolo --pt git -- -p "git status"   # Run git on host instead of container
 ```
 
-| Flag | Description |
-|------|-------------|
-| `-v`, `--verbose` | Enable debug logging to stderr |
-| `--log <path>` | Write debug logs to file |
+| Flag                                | Description                                       |
+| ----------------------------------- | ------------------------------------------------- |
+| `-v`, `--verbose`                   | Enable debug logging to stderr                    |
+| `--log <path>`                      | Write debug logs to file                          |
 | `--pt <cmd>`, `--passthrough <cmd>` | Run commands matching prefix on host (repeatable) |
 
 ### Passthrough
