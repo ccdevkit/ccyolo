@@ -72,7 +72,7 @@ func CaptureToken(debug DebugFunc) (string, error) {
 }
 
 // GetContainerSpec returns a ContainerSpec configured for running Claude in a container
-func GetContainerSpec(token string, sessionID string, settingsPath string, homeDir string, cwd string) (docker.ContainerSpec, error) {
+func GetContainerSpec(token string, sessionID string, settingsPath string, homeDir string, cwd string, extraArgs []string, extraMounts []docker.Mount) (docker.ContainerSpec, error) {
 	cckitDir := filepath.Join(homeDir, ".cckit", "ccyolo")
 	if err := os.MkdirAll(cckitDir, 0755); err != nil {
 		return docker.ContainerSpec{}, fmt.Errorf("failed to create cckit directory: %w", err)
@@ -84,19 +84,12 @@ func GetContainerSpec(token string, sessionID string, settingsPath string, homeD
 	}
 
 	claudeDir := filepath.Join(homeDir, ".claude")
-	projectDirName := cwdToProjectPath(cwd)
-	hostProjectDir := filepath.Join(claudeDir, "projects", projectDirName)
-	containerProjectDir := filepath.Join("/root", ".claude", "projects", projectDirName)
 
 	mounts := []docker.Mount{
-		// .claude.json for configuration
+		// .claude.json for configuration (file created by ensureClaudeJson)
 		{Host: claudeJsonPath, Container: "/root/.claude.json", ReadOnly: false},
-		// Mount entire ~/.claude as read-only first
-		{Host: claudeDir, Container: "/root/.claude", ReadOnly: true},
-		// Then override specific paths as read-write
-		{Host: hostProjectDir, Container: containerProjectDir, ReadOnly: false},
-		{Host: filepath.Join(claudeDir, "todos"), Container: "/root/.claude/todos", ReadOnly: false},
-		{Host: filepath.Join(claudeDir, "plans"), Container: "/root/.claude/plans", ReadOnly: false},
+		// Mount entire ~/.claude as read-write
+		{Host: claudeDir, Container: "/root/.claude", ReadOnly: false},
 		// Mount cwd
 		{Host: cwd, Container: cwd, ReadOnly: false},
 	}
@@ -110,6 +103,9 @@ func GetContainerSpec(token string, sessionID string, settingsPath string, homeD
 		})
 	}
 
+	// Add extra mounts from path arguments
+	mounts = append(mounts, extraMounts...)
+
 	env := []docker.EnvVar{
 		{Name: "CLAUDE_CODE_OAUTH_TOKEN", Value: token},
 	}
@@ -121,6 +117,9 @@ func GetContainerSpec(token string, sessionID string, settingsPath string, homeD
 	if sessionID != "" {
 		args = append(args, "--session-id", sessionID)
 	}
+
+	// Append extra args after our hardcoded args
+	args = append(args, extraArgs...)
 
 	return docker.ContainerSpec{
 		ImageName: "ccyolo",

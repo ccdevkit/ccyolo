@@ -14,6 +14,7 @@ type Mount struct {
 	Host      string
 	Container string
 	ReadOnly  bool
+	CreateDir bool // If true, create Host as a directory if it doesn't exist
 }
 
 // EnvVar represents an environment variable
@@ -41,10 +42,10 @@ func (e *ExitError) Error() string {
 	return fmt.Sprintf("exit code %d", e.Code)
 }
 
-// EnsureDirsExist creates host directories for read-write mounts
+// EnsureDirsExist creates host directories for mounts that have CreateDir set
 func EnsureDirsExist(mounts []Mount) error {
 	for _, m := range mounts {
-		if m.ReadOnly {
+		if !m.CreateDir {
 			continue
 		}
 		if err := os.MkdirAll(m.Host, 0700); err != nil {

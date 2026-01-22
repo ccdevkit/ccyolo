@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
+	"ccyolo/internal/args"
 	"ccyolo/internal/claude"
 	"ccyolo/internal/docker"
 	"ccyolo/internal/hostexec"
@@ -20,14 +22,53 @@ func debug(format string, args ...any) {
 	}
 }
 
+// extractCcyoloFlags separates --y:* and -y:* args from claude args
+// Returns (ccyolo args with prefix stripped, claude args)
+func extractCcyoloFlags(args []string) (ccyoloArgs []string, claudeArgs []string) {
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--y:") {
+			ccyoloArgs = append(ccyoloArgs, "--"+strings.TrimPrefix(arg, "--y:"))
+		} else if strings.HasPrefix(arg, "-y:") {
+			ccyoloArgs = append(ccyoloArgs, "-"+strings.TrimPrefix(arg, "-y:"))
+		} else {
+			claudeArgs = append(claudeArgs, arg)
+		}
+	}
+	return
+}
+
+// parseCcyoloFlags parses ccyolo-specific flags using the flag package
+func parseCcyoloFlags(args []string) {
+	fs := flag.NewFlagSet("ccyolo", flag.ExitOnError)
+	fs.BoolVar(&verbose, "v", false, "Enable verbose debug logging")
+	fs.BoolVar(&verbose, "verbose", false, "Enable verbose debug logging")
+	fs.Parse(args)
+}
+
 func main() {
-	flag.BoolVar(&verbose, "v", false, "Enable verbose debug logging")
-	flag.Parse()
+	// Extract --ccy:* flags for ccyolo, pass the rest to claude
+	ccyoloArgs, remainingArgs := extractCcyoloFlags(os.Args[1:])
+	parseCcyoloFlags(ccyoloArgs)
 
 	debug("ccyolo starting")
+	debug("Remaining args: %v", remainingArgs)
 
-	// Create session for this run
-	sess, err := session.New()
+	// Process args: extract session-id, find paths to bind
+	processed, err := args.Process(remainingArgs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error processing arguments: %v\n", err)
+		os.Exit(1)
+	}
+	debug("Processed args: SessionID=%s, PassArgs=%v, ExtraMounts=%d", processed.SessionID, processed.PassArgs, len(processed.ExtraMounts))
+
+	// Use provided session ID or create new session
+	var sess *session.Session
+	if processed.SessionID != "" {
+		debug("Using provided session ID: %s", processed.SessionID)
+		sess, err = session.WithID(processed.SessionID)
+	} else {
+		sess, err = session.New()
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating session: %v\n", err)
 		os.Exit(1)
@@ -71,7 +112,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	spec, err := claude.GetContainerSpec(token, sess.ID(), sess.SettingsPath(), homeDir, cwd)
+	spec, err := claude.GetContainerSpec(token, sess.ID(), sess.SettingsPath(), homeDir, cwd, processed.PassArgs, processed.ExtraMounts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating container spec: %v\n", err)
 		os.Exit(1)

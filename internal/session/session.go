@@ -16,7 +16,11 @@ type Session struct {
 
 // New creates a new session with a unique UUID and creates the temp directory
 func New() (*Session, error) {
-	id := uuid.New().String()
+	return WithID(uuid.New().String())
+}
+
+// WithID creates a session with a specific ID and creates the temp directory
+func WithID(id string) (*Session, error) {
 	tempDir := filepath.Join(os.TempDir(), id)
 
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
