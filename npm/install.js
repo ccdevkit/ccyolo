@@ -73,8 +73,8 @@ function extractTarGz(buffer, destDir) {
 }
 
 async function install() {
-  console.log(`Downloading ccyolo for ${goos}/${goarch}...`);
-  console.log(`URL: ${downloadUrl}`);
+  console.warn(`Downloading ccyolo for ${goos}/${goarch}...`);
+  console.warn(`URL: ${downloadUrl}`);
 
   try {
     // Ensure bin directory exists
@@ -83,7 +83,7 @@ async function install() {
     }
 
     const buffer = await makeRequest(downloadUrl);
-    console.log(`Downloaded ${buffer.length} bytes`);
+    console.warn(`Downloaded ${buffer.length} bytes`);
 
     extractTarGz(buffer, binDir);
 
@@ -92,7 +92,7 @@ async function install() {
       fs.chmodSync(binaryPath, 0o755);
     }
 
-    console.log(`Installed ccyolo to ${binaryPath}`);
+    console.warn(`Installed ccyolo to ${binaryPath}`);
   } catch (error) {
     console.error(`Failed to install ccyolo: ${error.message}`);
     console.error('');
