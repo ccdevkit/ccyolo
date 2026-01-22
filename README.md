@@ -2,6 +2,8 @@
 
 Drop-in replacement for `claude` that runs in a Docker container. Same CLI, no setup.
 
+![Demo](screenshots/demo.gif)
+
 ## Install
 
 ```bash
