@@ -13,6 +13,9 @@ import (
 	"ccyolo/internal/docker"
 )
 
+// Version is set by the main package
+var Version = "dev"
+
 // DebugFunc is a function for debug logging
 type DebugFunc func(format string, args ...any)
 
@@ -144,7 +147,7 @@ func GetContainerSpec(token string, settingsPath string, proxyConfigPath string,
 	cliArgs = append(cliArgs, extraArgs...)
 
 	return docker.ContainerSpec{
-		ImageName: "ccyolo",
+		ImageName: fmt.Sprintf("ghcr.io/ccdevkit/ccyolo:%s", Version),
 		Mounts:    mounts,
 		Env:       env,
 		Args:      cliArgs,

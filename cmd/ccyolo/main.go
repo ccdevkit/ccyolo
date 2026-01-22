@@ -14,6 +14,9 @@ import (
 	"ccyolo/internal/session"
 )
 
+// Version is set at build time via ldflags
+var Version = "dev"
+
 var verbose bool
 var logFile string
 var passthrough []string
@@ -62,6 +65,7 @@ ccyolo flags:
   --log <path>          Write debug logs to file (implies -v)
   --passthrough <cmd>   Run commands matching prefix on host (repeatable)
   -pt <cmd>             Short for --passthrough
+  --version             Print ccyolo version
 
 Examples:
   ccyolo                          Start claude interactively
@@ -98,8 +102,10 @@ func parseCcyoloFlags(args []string) bool {
 	fs.Usage = func() {} // Suppress default usage, we handle --help ourselves
 
 	var showHelp bool
+	var showVersion bool
 	fs.BoolVar(&showHelp, "help", false, "")
 	fs.BoolVar(&showHelp, "h", false, "")
+	fs.BoolVar(&showVersion, "version", false, "")
 	fs.BoolVar(&verbose, "v", false, "Enable verbose debug logging")
 	fs.BoolVar(&verbose, "verbose", false, "Enable verbose debug logging")
 	fs.StringVar(&logFile, "log", "", "Path to log file (when set with -v, logs go to file instead of stdout)")
@@ -117,6 +123,11 @@ func parseCcyoloFlags(args []string) bool {
 		return true
 	}
 
+	if showVersion {
+		fmt.Printf("ccyolo %s\n", Version)
+		return true
+	}
+
 	// If --log is set, enable verbose mode
 	if logFile != "" {
 		verbose = true
@@ -126,6 +137,9 @@ func parseCcyoloFlags(args []string) bool {
 }
 
 func main() {
+	// Set version in claude package
+	claude.Version = Version
+
 	// Check for --help before splitting (special case: no -- required)
 	for _, arg := range os.Args[1:] {
 		if arg == "--help" || arg == "-h" {
