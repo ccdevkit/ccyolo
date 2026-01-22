@@ -1,7 +1,7 @@
 <h1 align="center">ccyolo</h1>
 
 <p align="center">
-Run Claude Code in Docker with auto-accept enabled. <i>Same CLI, no setup, full YOLO.</i>
+Run Claude Code in Docker with auto-accept enabled. No setup, full parity with `claude` CLI.
 </p>
 
 <p align="center">
