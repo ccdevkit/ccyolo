@@ -135,14 +135,10 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Verify npm version
+      - name: Prepare npm package
         run: |
-          echo "Node: $(node -v)"
-          echo "npm: $(npm -v)"
-
-      - name: Update npm package version
-        working-directory: npm
-        run: |
+          cp README.md npm/
+          cd npm
           npm version ${{ needs.version.outputs.version }} --no-git-tag-version
 
       # Uses OIDC trusted publishing - no NPM_TOKEN needed
