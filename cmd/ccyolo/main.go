@@ -24,7 +24,6 @@ var Version = "dev"
 var verbose bool
 var logFile string
 var passthrough []string
-var enableClipboard bool
 
 const (
 	clipboardPort          = "9999"
@@ -75,7 +74,6 @@ ccyolo flags:
   --log <path>          Write debug logs to file (implies -v)
   --passthrough <cmd>   Run commands matching prefix on host (repeatable)
   -pt <cmd>             Short for --passthrough
-  --clipboard           Enable clipboard image paste support (Ctrl+V)
   --version             Print ccyolo version
 
 Examples:
@@ -122,7 +120,6 @@ func parseCcyoloFlags(args []string) bool {
 	fs.StringVar(&logFile, "log", "", "Path to log file (when set with -v, logs go to file instead of stdout)")
 	fs.Var((*stringSliceFlag)(&passthrough), "pt", "Command prefix to pass through to host (can be repeated)")
 	fs.Var((*stringSliceFlag)(&passthrough), "passthrough", "Command prefix to pass through to host (can be repeated)")
-	fs.BoolVar(&enableClipboard, "clipboard", false, "Enable clipboard image paste support")
 
 	if err := fs.Parse(args); err != nil {
 		// Unknown flag - print help and exit
@@ -262,39 +259,38 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Set up clipboard support if enabled
+	// Set up clipboard and image drag-drop support
 	var stdinReader io.Reader // nil means use os.Stdin directly in RunSpec
 	bridgeDir := ""
+	clipboardEnabled := false
 
-	if enableClipboard {
-		debug("Clipboard support enabled")
+	// Set clipboard debug function before init
+	clipboard.SetDebug(debug)
 
-		// Set clipboard debug function before init
-		clipboard.SetDebug(debug)
-
-		// Initialize clipboard library
-		if err := clipboard.Init(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Failed to initialize clipboard: %v\n", err)
-			fmt.Fprintf(os.Stderr, "Clipboard support disabled.\n")
-			enableClipboard = false
-		} else {
-			debug("Clipboard initialized: %s", clipboard.PlatformInfo())
-
-			// Create bridge directory for file drag-drop
-			bridgeDir = filepath.Join(homeDir, ".ccyolo-bridge")
-			if err := os.MkdirAll(bridgeDir, 0755); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: Failed to create bridge directory: %v\n", err)
-			}
-			debug("Bridge directory: %s", bridgeDir)
-
-			// Create clipboard syncer (will connect to container daemon)
-			clipboardSyncer := stdin.NewTCPClipboardSyncer("localhost:"+clipboardPort, debug)
-
-			// Create stdin interceptor
-			stdinReader = stdin.NewInterceptor(os.Stdin, clipboardSyncer, bridgeDir, containerBridgeDir, debug)
-			debug("Stdin interceptor created")
-		}
+	// Initialize clipboard library
+	if err := clipboard.Init(); err != nil {
+		debug("Warning: Failed to initialize clipboard: %v", err)
+	} else {
+		clipboardEnabled = true
+		debug("Clipboard initialized: %s", clipboard.PlatformInfo())
 	}
+
+	// Create bridge directory for file drag-drop
+	bridgeDir = filepath.Join(homeDir, ".ccyolo-bridge")
+	if err := os.MkdirAll(bridgeDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to create bridge directory: %v\n", err)
+	}
+	debug("Bridge directory: %s", bridgeDir)
+
+	// Create clipboard syncer (will connect to container daemon) - only if clipboard works
+	var clipboardSyncer stdin.ClipboardSyncer
+	if clipboardEnabled {
+		clipboardSyncer = stdin.NewTCPClipboardSyncer("localhost:"+clipboardPort, debug)
+	}
+
+	// Create stdin interceptor (always enabled for file drag-drop, clipboard optional)
+	stdinReader = stdin.NewInterceptor(os.Stdin, clipboardSyncer, bridgeDir, containerBridgeDir, debug)
+	debug("Stdin interceptor created")
 
 	spec, err := claude.GetContainerSpec(token, sess.SettingsPath(), proxyConfigPath, systemPromptPath, homeDir, cwd, processed.PassArgs, processed.ExtraMounts)
 	if err != nil {
@@ -302,28 +298,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Add clipboard-specific configuration if enabled
-	if enableClipboard {
-		// Add clipboard port env var
-		spec.Env = append(spec.Env, docker.EnvVar{Name: "CCYOLO_CLIP_PORT", Value: clipboardPort})
-		// Add DISPLAY for xclip
-		spec.Env = append(spec.Env, docker.EnvVar{Name: "DISPLAY", Value: ":99"})
-		// Add port mapping for clipboard daemon
-		spec.Ports = append(spec.Ports, docker.PortMapping{
-			Host:      clipboardPort,
-			Container: clipboardPort,
+	// Add clipboard and bridge configuration
+	// Add clipboard port env var
+	spec.Env = append(spec.Env, docker.EnvVar{Name: "CCYOLO_CLIP_PORT", Value: clipboardPort})
+	// Add DISPLAY for xclip
+	spec.Env = append(spec.Env, docker.EnvVar{Name: "DISPLAY", Value: ":99"})
+	// Add port mapping for clipboard daemon
+	spec.Ports = append(spec.Ports, docker.PortMapping{
+		Host:      clipboardPort,
+		Container: clipboardPort,
+	})
+	// Add bridge directory mount
+	if bridgeDir != "" {
+		spec.Mounts = append(spec.Mounts, docker.Mount{
+			Host:      bridgeDir,
+			Container: containerBridgeDir,
+			ReadOnly:  false,
+			CreateDir: true,
 		})
-		// Add bridge directory mount
-		if bridgeDir != "" {
-			spec.Mounts = append(spec.Mounts, docker.Mount{
-				Host:      bridgeDir,
-				Container: containerBridgeDir,
-				ReadOnly:  false,
-				CreateDir: true,
-			})
-		}
-		debug("Added clipboard environment, port mapping, and mounts")
 	}
+	debug("Added clipboard environment, port mapping, and mounts")
 
 	if err := docker.RunSpec(spec, stdinReader, debug); err != nil {
 		if exitErr, ok := err.(*docker.ExitError); ok {
