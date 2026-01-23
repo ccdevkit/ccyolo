@@ -20,9 +20,20 @@ func SetDebug(fn DebugFunc) {
 }
 
 // Init initializes the clipboard library. Must be called before ReadImage.
-func Init() error {
+// Returns error if initialization fails, including when built without CGO.
+func Init() (err error) {
 	debugFn("clipboard.Init: initializing clipboard library")
-	err := clipboard.Init()
+
+	// The clipboard library panics when built with CGO_ENABLED=0
+	// Recover from this panic and return an error instead
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("clipboard not available: %v", r)
+			debugFn("clipboard.Init: panic recovered: %v", r)
+		}
+	}()
+
+	err = clipboard.Init()
 	if err != nil {
 		debugFn("clipboard.Init: failed: %v", err)
 	} else {
