@@ -317,9 +317,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Forward TERM for proper color support
+	// Forward terminal env vars for proper color support
 	if term := os.Getenv("TERM"); term != "" {
 		spec.Env = append(spec.Env, docker.EnvVar{Name: "TERM", Value: term})
+	}
+	if colorterm := os.Getenv("COLORTERM"); colorterm != "" {
+		spec.Env = append(spec.Env, docker.EnvVar{Name: "COLORTERM", Value: colorterm})
 	}
 
 	// Add clipboard and bridge configuration
