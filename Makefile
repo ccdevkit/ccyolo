@@ -1,7 +1,7 @@
 BINARY_NAME=ccyolo
 BUILD_DIR=bin
 INSTALL_PATH=/usr/local/bin
-IMAGE_NAME=ccyolo:latest
+IMAGE_NAME="ghcr.io/ccdevkit/ccyolo:dev"
 
 .PHONY: build install uninstall clean docker run
 
