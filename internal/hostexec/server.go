@@ -191,6 +191,55 @@ func (s *Server) handleLog(req *LogRequest) {
 	s.debug("[container] %s", req.Message)
 }
 
+// rewriteContainerPaths replaces /home/claude with the actual host home directory
+// in the statusline JSON data. This is needed because paths like transcriptPath
+// are generated inside the container but need to be valid on the host.
+func (s *Server) rewriteContainerPaths(data []byte) []byte {
+	// Parse as generic JSON to find and replace paths
+	var obj map[string]any
+	if err := json.Unmarshal(data, &obj); err != nil {
+		// Not valid JSON, return as-is
+		return data
+	}
+
+	// Recursively rewrite paths in the object
+	s.rewritePathsInObject(obj)
+
+	// Re-encode
+	result, err := json.Marshal(obj)
+	if err != nil {
+		return data
+	}
+	return result
+}
+
+// rewritePathsInObject recursively walks a JSON object and rewrites container paths
+func (s *Server) rewritePathsInObject(obj map[string]any) {
+	const containerHome = "/home/claude"
+
+	for key, value := range obj {
+		switch v := value.(type) {
+		case string:
+			// Check if this string starts with the container home path
+			if strings.HasPrefix(v, containerHome) {
+				obj[key] = s.homeDir + strings.TrimPrefix(v, containerHome)
+			}
+		case map[string]any:
+			// Recurse into nested objects
+			s.rewritePathsInObject(v)
+		case []any:
+			// Handle arrays
+			for i, item := range v {
+				if str, ok := item.(string); ok && strings.HasPrefix(str, containerHome) {
+					v[i] = s.homeDir + strings.TrimPrefix(str, containerHome)
+				} else if nested, ok := item.(map[string]any); ok {
+					s.rewritePathsInObject(nested)
+				}
+			}
+		}
+	}
+}
+
 func (s *Server) handleStatusline(conn net.Conn, stdinData []byte) {
 	settings, err := GetMergedSettings(s.homeDir, s.cwd)
 	if err != nil {
@@ -203,9 +252,13 @@ func (s *Server) handleStatusline(conn net.Conn, stdinData []byte) {
 		return
 	}
 
+	// Rewrite container paths to host paths
+	rewrittenData := s.rewriteContainerPaths(stdinData)
+	s.debug("Statusline input (rewritten): %s", strings.TrimSpace(string(rewrittenData)))
+
 	cmd := shellCommand(settings.StatusLine.Command)
 	cmd.Dir = s.cwd
-	cmd.Stdin = bytes.NewReader(stdinData)
+	cmd.Stdin = bytes.NewReader(rewrittenData)
 
 	output, err := cmd.Output()
 	if err != nil {
