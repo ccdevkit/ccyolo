@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,9 +27,19 @@ var logFile string
 var passthrough []string
 
 const (
-	clipboardPort          = "9999"
-	containerBridgeDir     = "/home/claude/.ccyolo-bridge"
+	containerBridgeDir = "/home/claude/.ccyolo-bridge"
 )
+
+// findFreePort finds an available TCP port by binding to port 0
+func findFreePort() (string, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", err
+	}
+	defer listener.Close()
+	port := listener.Addr().(*net.TCPAddr).Port
+	return fmt.Sprintf("%d", port), nil
+}
 
 // stringSliceFlag allows a flag to be specified multiple times
 type stringSliceFlag []string
@@ -281,6 +292,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to create bridge directory: %v\n", err)
 	}
 	debug("Bridge directory: %s", bridgeDir)
+
+	// Find a free port for clipboard daemon
+	clipboardPort, err := findFreePort()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to find free port for clipboard: %v\n", err)
+		clipboardEnabled = false
+	}
+	debug("Clipboard port: %s", clipboardPort)
 
 	// Create clipboard syncer (will connect to container daemon) - only if clipboard works
 	var clipboardSyncer stdin.ClipboardSyncer
