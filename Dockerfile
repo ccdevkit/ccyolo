@@ -6,6 +6,7 @@ RUN go mod download
 COPY cmd/ccproxy ./cmd/ccproxy
 COPY cmd/ccdebug ./cmd/ccdebug
 COPY cmd/ccclipd ./cmd/ccclipd
+COPY internal/ ./internal/
 RUN CGO_ENABLED=0 go build -o ccproxy ./cmd/ccproxy
 RUN CGO_ENABLED=0 go build -o ccdebug ./cmd/ccdebug
 RUN CGO_ENABLED=0 go build -o ccclipd ./cmd/ccclipd

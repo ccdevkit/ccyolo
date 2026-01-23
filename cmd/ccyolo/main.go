@@ -34,6 +34,10 @@ type Config struct {
 var logger *log.Logger
 
 func initLogger(cfg *Config) (*os.File, error) {
+	if !cfg.Verbose {
+		// No logging if not in verbose mode
+		return nil, nil
+	}
 	if cfg.LogFile != "" {
 		f, err := os.OpenFile(cfg.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
@@ -324,14 +328,11 @@ func run() error {
 		defer logFileHandle.Close()
 	}
 
-	// Only log if verbose is enabled
-	if cfg.Verbose {
-		debug("ccyolo starting")
-		debug("Claude args: %v", cfg.ClaudeArgs)
-		debug("Passthrough: %q", cfg.Passthrough)
-		if cfg.LogFile != "" {
-			debug("Logging to: %s", cfg.LogFile)
-		}
+	debug("ccyolo starting")
+	debug("Claude args: %v", cfg.ClaudeArgs)
+	debug("Passthrough: %q", cfg.Passthrough)
+	if cfg.LogFile != "" {
+		debug("Logging to: %s", cfg.LogFile)
 	}
 
 	// Process args: extract session-id, find paths to bind
