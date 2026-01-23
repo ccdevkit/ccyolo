@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/creack/pty"
 	"golang.org/x/term"
 )
 
@@ -174,15 +173,15 @@ func RunSpec(spec ContainerSpec, stdinInterceptor io.Reader, debug DebugFunc) er
 // runWithPTY runs the command in a PTY, allowing stdin interception while preserving TTY
 func runWithPTY(cmd *exec.Cmd, stdinInterceptor io.Reader, debug DebugFunc) error {
 	// Start the command with a pty
-	ptmx, err := pty.Start(cmd)
+	p, err := newPTY(cmd)
 	if err != nil {
 		return fmt.Errorf("failed to start pty: %w", err)
 	}
-	defer ptmx.Close()
+	defer p.Close()
 	debug("Started command with PTY")
 
 	// Handle pty size changes
-	cleanup := handleResize(ptmx, debug)
+	cleanup := handleResize(p, debug)
 	defer cleanup()
 
 	// Set stdin to raw mode
@@ -195,17 +194,17 @@ func runWithPTY(cmd *exec.Cmd, stdinInterceptor io.Reader, debug DebugFunc) erro
 
 	// Copy intercepted stdin to pty master
 	go func() {
-		_, err := io.Copy(ptmx, stdinInterceptor)
+		_, err := io.Copy(p, stdinInterceptor)
 		if err != nil {
 			debug("stdin copy error: %v", err)
 		}
 	}()
 
 	// Copy pty master output to stdout
-	_, _ = io.Copy(os.Stdout, ptmx)
+	_, _ = io.Copy(os.Stdout, p)
 
 	// Wait for command to finish
-	err = cmd.Wait()
+	err = p.Wait()
 	debug("Docker command finished")
 
 	if err != nil {
