@@ -86,6 +86,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install X11 dev headers (Linux)
+        if: matrix.goos == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
