@@ -59,25 +59,75 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  build-binaries:
+  # Native builds with CGO enabled (clipboard support)
+  build-binaries-native:
+    needs: version
+    strategy:
+      matrix:
+        include:
+          # macOS ARM64 (Apple Silicon)
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+          # macOS AMD64 (Intel)
+          - os: macos-13
+            goos: darwin
+            goarch: amd64
+          # Linux AMD64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          # Windows AMD64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build binary (Unix)
+        if: matrix.goos != 'windows'
+        env:
+          CGO_ENABLED: 1
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          go build -ldflags="-s -w -X main.Version=${VERSION}" -o ccyolo ./cmd/ccyolo
+          tar -czvf ccyolo-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz ccyolo
+
+      - name: Build binary (Windows)
+        if: matrix.goos == 'windows'
+        env:
+          CGO_ENABLED: 1
+        run: |
+          $VERSION = "${{ needs.version.outputs.version }}"
+          go build -ldflags="-s -w -X main.Version=$VERSION" -o ccyolo.exe ./cmd/ccyolo
+          tar -czvf ccyolo-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz ccyolo.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ccyolo-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ccyolo-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+
+  # Cross-compiled builds without CGO (no clipboard, ARM64 platforms)
+  build-binaries-cross:
     needs: version
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: linux
-            goarch: amd64
+          # Linux ARM64 (no native runner available)
           - goos: linux
             goarch: arm64
-          - goos: windows
-            goarch: amd64
+          # Windows ARM64 (no native runner available)
           - goos: windows
             goarch: arm64
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -108,7 +158,7 @@ jobs:
           path: ccyolo-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
 
   create-release:
-    needs: [version, build-binaries, build-docker]
+    needs: [version, build-binaries-native, build-binaries-cross, build-docker]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
