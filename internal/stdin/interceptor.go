@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -14,6 +15,9 @@ const (
 	bracketedStart = "\x1B[200~"
 	bracketedEnd   = "\x1B[201~"
 )
+
+// imageExtRegex matches image file extensions (same as Claude Code)
+var imageExtRegex = regexp.MustCompile(`(?i)\.(png|jpe?g|gif|webp)$`)
 
 // DebugFunc is a function for debug logging
 type DebugFunc func(format string, args ...any)
@@ -154,29 +158,55 @@ func (i *Interceptor) process(data []byte) []byte {
 // processPastedContent checks for file paths and bridges them
 func (i *Interceptor) processPastedContent(data []byte) []byte {
 	content := string(data)
+	i.debug("Processing pasted content: %q", content)
 
-	// Split on whitespace to find potential paths
-	parts := strings.Fields(content)
+	// The pasted content may be a single path with escaped spaces (e.g., /path/to/file\ name.png)
+	// or multiple space-separated paths. We need to handle both cases.
+
+	// First, try to parse the entire content as a single shell-escaped path
+	// Trim trailing whitespace (terminals often add a trailing space)
+	content = strings.TrimRight(content, " \t\n\r")
+	unescaped := unescapeShellPath(content)
+	i.debug("Unescaped path: %q", unescaped)
+
+	// Check if it looks like an image path
+	if looksLikeImagePath(unescaped) {
+		i.debug("Looks like image path, checking if exists: %q", unescaped)
+		if _, err := os.Stat(unescaped); err == nil {
+			i.debug("File exists, bridging: %q", unescaped)
+			bridgedPath, err := i.bridgeFile(unescaped)
+			if err == nil {
+				i.debug("Bridged to: %q", bridgedPath)
+				// Return the bridged path, re-escaped for shell
+				return []byte(escapeShellPath(bridgedPath))
+			}
+			i.debug("Bridge error: %v", err)
+		} else {
+			i.debug("File does not exist: %v", err)
+		}
+	}
+
+	// If single-path approach didn't work, try splitting on unescaped spaces
+	// This handles cases like: /path/one.png /path/two.png
+	parts := splitShellPaths(content)
+	if len(parts) <= 1 {
+		return data // Nothing to process
+	}
+
 	modified := false
-
 	for idx, part := range parts {
-		part = strings.TrimSpace(part)
-		if !looksLikePath(part) {
+		unescaped := unescapeShellPath(part)
+		if !looksLikeImagePath(unescaped) {
 			continue
 		}
-
-		// Check if file exists on host
-		if _, err := os.Stat(part); err != nil {
+		if _, err := os.Stat(unescaped); err != nil {
 			continue
 		}
-
-		// Bridge the file
-		bridgedPath, err := i.bridgeFile(part)
+		bridgedPath, err := i.bridgeFile(unescaped)
 		if err != nil {
 			continue
 		}
-
-		parts[idx] = bridgedPath
+		parts[idx] = escapeShellPath(bridgedPath)
 		modified = true
 	}
 
@@ -216,16 +246,75 @@ func (i *Interceptor) bridgeFile(hostPath string) (string, error) {
 	return filepath.Join(i.containerBridgeDir, filename), nil
 }
 
-// looksLikePath returns true if the string looks like a file path
-func looksLikePath(s string) bool {
-	if strings.HasPrefix(s, "-") {
+// looksLikeImagePath returns true if the string looks like an image file path
+// that Claude Code would recognize
+func looksLikeImagePath(s string) bool {
+	// Must start with a path prefix
+	if !strings.HasPrefix(s, "/") &&
+		!strings.HasPrefix(s, "./") &&
+		!strings.HasPrefix(s, "../") &&
+		!strings.HasPrefix(s, "~/") {
 		return false
 	}
-	if strings.HasPrefix(s, "/") ||
-		strings.HasPrefix(s, "./") ||
-		strings.HasPrefix(s, "../") ||
-		strings.HasPrefix(s, "~/") {
-		return true
+	// Must have an image extension (same as Claude Code)
+	return imageExtRegex.MatchString(s)
+}
+
+// unescapeShellPath converts shell-escaped path to regular path
+// e.g., "/path/to/file\ name.png" -> "/path/to/file name.png"
+func unescapeShellPath(s string) string {
+	// Handle backslash-escaped characters
+	result := strings.ReplaceAll(s, "\\ ", " ")
+	result = strings.ReplaceAll(result, "\\(", "(")
+	result = strings.ReplaceAll(result, "\\)", ")")
+	result = strings.ReplaceAll(result, "\\'", "'")
+	result = strings.ReplaceAll(result, "\\\"", "\"")
+	result = strings.ReplaceAll(result, "\\\\", "\\")
+	return result
+}
+
+// escapeShellPath escapes a path for shell use
+func escapeShellPath(s string) string {
+	// Escape spaces and special characters
+	result := strings.ReplaceAll(s, "\\", "\\\\")
+	result = strings.ReplaceAll(result, " ", "\\ ")
+	result = strings.ReplaceAll(result, "(", "\\(")
+	result = strings.ReplaceAll(result, ")", "\\)")
+	result = strings.ReplaceAll(result, "'", "\\'")
+	result = strings.ReplaceAll(result, "\"", "\\\"")
+	return result
+}
+
+// splitShellPaths splits a string on unescaped spaces
+// This handles paths like: /path/one.png /path/two.png
+// but keeps /path/to/file\ name.png as a single path
+func splitShellPaths(s string) []string {
+	var parts []string
+	var current strings.Builder
+	escaped := false
+
+	for _, r := range s {
+		if escaped {
+			current.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			current.WriteRune(r)
+			escaped = true
+			continue
+		}
+		if r == ' ' {
+			if current.Len() > 0 {
+				parts = append(parts, current.String())
+				current.Reset()
+			}
+			continue
+		}
+		current.WriteRune(r)
 	}
-	return false
+	if current.Len() > 0 {
+		parts = append(parts, current.String())
+	}
+	return parts
 }
