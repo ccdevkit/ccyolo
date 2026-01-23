@@ -66,6 +66,28 @@ ccyolo --pt git --pt docker -- -p "build and push the image"
 
 This runs `git` and `docker` commands on your host, while everything else runs in the container. You can specify `--pt` multiple times.
 
+## Clipboard & Drag-Drop
+
+ccyolo supports pasting images from your clipboard (Ctrl+V / Cmd+V) and dragging files into the terminal, just like the native `claude` CLI.
+
+### How it works
+
+When you paste or drag a file, ccyolo intercepts the input, copies the file into the container via a shared bridge directory, and rewrites the path so Claude sees it correctly.
+
+### Platform support
+
+| Platform | Clipboard (Ctrl+V) | File drag-drop |
+|----------|-------------------|----------------|
+| macOS (Intel & Apple Silicon) | ✅ | ✅ |
+| Linux x64 | ✅ | ✅ |
+| Windows x64 | ✅ | ✅ |
+| Linux ARM64 | ❌ | ✅ |
+| Windows ARM64 | ❌ | ✅ |
+
+**Why no clipboard on ARM64?** Clipboard image support requires native system APIs (NSPasteboard, Win32, X11) which need CGO compilation. GitHub Actions doesn't provide native ARM64 runners for Linux or Windows, so those builds are cross-compiled without CGO. File drag-drop still works because it only requires path rewriting, not system clipboard access.
+
+If you need clipboard support on ARM64, you can build from source on a native ARM64 machine with CGO enabled.
+
 ## Requirements
 
 - Docker
