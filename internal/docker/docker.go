@@ -233,7 +233,7 @@ func runWithPTY(cmd *exec.Cmd, stdinInterceptor io.Reader, debug DebugFunc) erro
 func isTerminal(fd int) bool {
 	var termios syscall.Termios
 	_, _, err := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd),
-		uintptr(syscall.TIOCGETA), uintptr(unsafe.Pointer(&termios)), 0, 0, 0)
+		ioctlReadTermios, uintptr(unsafe.Pointer(&termios)), 0, 0, 0)
 	return err == 0
 }
 
@@ -241,7 +241,7 @@ func isTerminal(fd int) bool {
 func makeRaw(fd int) (*syscall.Termios, error) {
 	var oldState syscall.Termios
 	if _, _, err := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd),
-		uintptr(syscall.TIOCGETA), uintptr(unsafe.Pointer(&oldState)), 0, 0, 0); err != 0 {
+		ioctlReadTermios, uintptr(unsafe.Pointer(&oldState)), 0, 0, 0); err != 0 {
 		return nil, err
 	}
 
@@ -256,7 +256,7 @@ func makeRaw(fd int) (*syscall.Termios, error) {
 	newState.Cc[syscall.VTIME] = 0
 
 	if _, _, err := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd),
-		uintptr(syscall.TIOCSETA), uintptr(unsafe.Pointer(&newState)), 0, 0, 0); err != 0 {
+		ioctlWriteTermios, uintptr(unsafe.Pointer(&newState)), 0, 0, 0); err != 0 {
 		return nil, err
 	}
 
@@ -266,7 +266,7 @@ func makeRaw(fd int) (*syscall.Termios, error) {
 // restoreTerminal restores the terminal to a previous state
 func restoreTerminal(fd int, state *syscall.Termios) error {
 	if _, _, err := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd),
-		uintptr(syscall.TIOCSETA), uintptr(unsafe.Pointer(state)), 0, 0, 0); err != 0 {
+		ioctlWriteTermios, uintptr(unsafe.Pointer(state)), 0, 0, 0); err != 0 {
 		return err
 	}
 	return nil
