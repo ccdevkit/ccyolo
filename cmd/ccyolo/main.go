@@ -298,6 +298,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Forward TERM for proper color support
+	if term := os.Getenv("TERM"); term != "" {
+		spec.Env = append(spec.Env, docker.EnvVar{Name: "TERM", Value: term})
+	}
+
 	// Add clipboard and bridge configuration
 	// Add clipboard port env var
 	spec.Env = append(spec.Env, docker.EnvVar{Name: "CCYOLO_CLIP_PORT", Value: clipboardPort})
