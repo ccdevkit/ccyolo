@@ -10,11 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"ccyolo/internal/constants"
 	"ccyolo/internal/docker"
 )
 
 // Version is set by the main package
-var Version = "dev"
+var Version = constants.DefaultVersion
 
 // DebugFunc is a function for debug logging
 type DebugFunc func(format string, args ...any)
@@ -77,7 +78,7 @@ func CaptureToken(debug DebugFunc) (string, error) {
 
 // GetContainerSpec returns a ContainerSpec configured for running Claude in a container
 func GetContainerSpec(token string, settingsPath string, proxyConfigPath string, systemPromptPath string, homeDir string, cwd string, extraArgs []string, extraMounts []docker.Mount) (docker.ContainerSpec, error) {
-	cckitDir := filepath.Join(homeDir, ".cckit", "ccyolo")
+	cckitDir := filepath.Join(homeDir, constants.CckitDirName)
 	if err := os.MkdirAll(cckitDir, 0755); err != nil {
 		return docker.ContainerSpec{}, fmt.Errorf("failed to create cckit directory: %w", err)
 	}
@@ -87,16 +88,13 @@ func GetContainerSpec(token string, settingsPath string, proxyConfigPath string,
 		return docker.ContainerSpec{}, err
 	}
 
-	claudeDir := filepath.Join(homeDir, ".claude")
-
-	// Container runs as user "claude" with home at /home/claude
-	containerHome := "/home/claude"
+	claudeDir := filepath.Join(homeDir, constants.ClaudeDirName)
 
 	mounts := []docker.Mount{
 		// .claude.json for configuration (file created by ensureClaudeJson)
-		{Host: claudeJsonPath, Container: containerHome + "/.claude.json", ReadOnly: false},
+		{Host: claudeJsonPath, Container: constants.ContainerHome + "/" + constants.ClaudeJsonFile, ReadOnly: false},
 		// Mount entire ~/.claude as read-write
-		{Host: claudeDir, Container: containerHome + "/.claude", ReadOnly: false},
+		{Host: claudeDir, Container: constants.ContainerHome + "/" + constants.ClaudeDirName, ReadOnly: false},
 		// Mount cwd
 		{Host: cwd, Container: cwd, ReadOnly: false},
 	}
@@ -105,7 +103,7 @@ func GetContainerSpec(token string, settingsPath string, proxyConfigPath string,
 	if settingsPath != "" {
 		mounts = append(mounts, docker.Mount{
 			Host:      settingsPath,
-			Container: "/tmp/ccyolo-settings.json",
+			Container: constants.ContainerSettingsPath(),
 			ReadOnly:  true,
 		})
 	}
@@ -114,7 +112,7 @@ func GetContainerSpec(token string, settingsPath string, proxyConfigPath string,
 	if proxyConfigPath != "" {
 		mounts = append(mounts, docker.Mount{
 			Host:      proxyConfigPath,
-			Container: "/tmp/ccyolo-proxy.json",
+			Container: constants.ContainerProxyConfigPath(),
 			ReadOnly:  true,
 		})
 	}
@@ -123,7 +121,7 @@ func GetContainerSpec(token string, settingsPath string, proxyConfigPath string,
 	if systemPromptPath != "" {
 		mounts = append(mounts, docker.Mount{
 			Host:      systemPromptPath,
-			Container: "/tmp/ccyolo-system-prompt.md",
+			Container: constants.ContainerSystemPromptPath(),
 			ReadOnly:  true,
 		})
 	}
@@ -132,22 +130,22 @@ func GetContainerSpec(token string, settingsPath string, proxyConfigPath string,
 	mounts = append(mounts, extraMounts...)
 
 	env := []docker.EnvVar{
-		{Name: "CLAUDE_CODE_OAUTH_TOKEN", Value: token, Secret: true},
+		{Name: constants.EnvOAuthToken, Value: token, Secret: true},
 	}
 
 	var cliArgs []string
 	if settingsPath != "" {
-		cliArgs = append(cliArgs, "--settings", "/tmp/ccyolo-settings.json")
+		cliArgs = append(cliArgs, "--settings", constants.ContainerSettingsPath())
 	}
 	if systemPromptPath != "" {
-		cliArgs = append(cliArgs, "--append-system-prompt-file", "/tmp/ccyolo-system-prompt.md")
+		cliArgs = append(cliArgs, "--append-system-prompt-file", constants.ContainerSystemPromptPath())
 	}
 
 	// Append extra args after our hardcoded args
 	cliArgs = append(cliArgs, extraArgs...)
 
 	return docker.ContainerSpec{
-		ImageName: fmt.Sprintf("ghcr.io/ccdevkit/ccyolo:%s", Version),
+		ImageName: fmt.Sprintf("%s:%s", constants.DockerImageRegistry, Version),
 		Mounts:    mounts,
 		Env:       env,
 		Args:      cliArgs,
@@ -168,7 +166,7 @@ func cwdToProjectPath(cwd string) string {
 // ensureClaudeJson ensures the .claude.json file exists in the cckit directory
 // with the required flags to skip prompts. Only creates if it doesn't exist.
 func ensureClaudeJson(cckitDir string, homeDir string) (string, error) {
-	claudeJsonPath := filepath.Join(cckitDir, ".claude.json")
+	claudeJsonPath := filepath.Join(cckitDir, constants.ClaudeJsonFile)
 
 	// If file already exists, don't overwrite it
 	if _, err := os.Stat(claudeJsonPath); err == nil {
@@ -182,7 +180,7 @@ func ensureClaudeJson(cckitDir string, homeDir string) (string, error) {
 	}
 
 	// Try to read oauthAccount from host's .claude.json to preserve subscription tier
-	hostClaudeJson := filepath.Join(homeDir, ".claude.json")
+	hostClaudeJson := filepath.Join(homeDir, constants.ClaudeJsonFile)
 	if data, err := os.ReadFile(hostClaudeJson); err == nil {
 		var hostConfig map[string]any
 		if err := json.Unmarshal(data, &hostConfig); err == nil {

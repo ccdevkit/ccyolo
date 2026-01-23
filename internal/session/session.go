@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"ccyolo/internal/constants"
 	"github.com/google/uuid"
 )
 
@@ -78,17 +79,17 @@ func (s *Session) WriteSettings(port int) error {
   },
   "statusLine": {
     "type": "command",
-    "command": "nc -N host.docker.internal %d"
+    "command": "nc -N %s %d"
   }
 }
-`, port)
+`, constants.DockerHostDNS, port)
 	return os.WriteFile(s.SettingsPath(), []byte(content), 0644)
 }
 
 // WriteProxyConfig generates the ccyolo-proxy.json config file for the container
 func (s *Session) WriteProxyConfig(port int, passthrough []string, verbose bool) error {
 	config := ProxyConfig{
-		HostAddress: fmt.Sprintf("host.docker.internal:%d", port),
+		HostAddress: fmt.Sprintf("%s:%d", constants.DockerHostDNS, port),
 		Passthrough: passthrough,
 		Verbose:     verbose,
 	}

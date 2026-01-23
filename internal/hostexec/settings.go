@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"ccyolo/internal/constants"
 )
 
 // StatusLine represents the statusLine configuration
@@ -22,13 +24,13 @@ func GetMergedSettings(homeDir, cwd string) (*Settings, error) {
 	result := &Settings{}
 
 	// Read global settings first
-	globalPath := filepath.Join(homeDir, ".claude", "settings.json")
+	globalPath := filepath.Join(homeDir, constants.ClaudeDirName, constants.SettingsJson)
 	if global, err := readSettings(globalPath); err == nil {
 		mergeSettings(result, global)
 	}
 
 	// Read and merge local settings (takes precedence)
-	localPath := filepath.Join(cwd, ".claude", "settings.json")
+	localPath := filepath.Join(cwd, constants.ClaudeDirName, constants.SettingsJson)
 	if local, err := readSettings(localPath); err == nil {
 		mergeSettings(result, local)
 	}

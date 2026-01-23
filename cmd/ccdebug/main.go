@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"ccyolo/internal/constants"
 )
 
 // LogRequest is the JSON request for logging to the host
@@ -18,8 +20,7 @@ type LogRequest struct {
 
 func main() {
 	// Read config to get host address and verbose flag
-	configPath := "/tmp/ccyolo-proxy.json"
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(constants.ContainerProxyConfigPath())
 	if err != nil {
 		// No config = no logging, exit silently
 		os.Exit(0)

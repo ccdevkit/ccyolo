@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"ccyolo/cmd/ccproxy/matcher"
+	"ccyolo/internal/constants"
 )
 
 func main() {
@@ -140,7 +141,7 @@ func findRealBinary(name string) string {
 
 	for _, dir := range paths {
 		// Skip our hijacker directory
-		if dir == HijackerDir {
+		if dir == constants.HijackerDir {
 			continue
 		}
 

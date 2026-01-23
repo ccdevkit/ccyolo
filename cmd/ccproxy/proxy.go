@@ -7,14 +7,9 @@ import (
 	"io"
 	"net"
 	"os"
-)
 
-// ExecRequest is the JSON request sent to the host for command execution
-type ExecRequest struct {
-	Type    string `json:"type"`
-	Command string `json:"command"`
-	Cwd     string `json:"cwd"`
-}
+	"ccyolo/internal/protocol"
+)
 
 // ProxyToHost connects to the host server and executes a command
 // Returns the exit code from the host
@@ -37,7 +32,7 @@ func ProxyToHost(hostAddress, command string) int {
 	Debug("Sending exec request: %s (cwd: %s)", command, cwd)
 
 	// Send the exec request as JSON on the first line
-	req := ExecRequest{
+	req := protocol.ExecRequest{
 		Type:    "exec",
 		Command: command,
 		Cwd:     cwd,

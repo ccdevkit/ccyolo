@@ -3,9 +3,9 @@ package main
 import (
 	"encoding/json"
 	"os"
-)
 
-const ConfigPath = "/tmp/ccyolo-proxy.json"
+	"ccyolo/internal/constants"
+)
 
 // Config represents the proxy configuration
 type Config struct {
@@ -16,7 +16,7 @@ type Config struct {
 
 // LoadConfig reads and parses the config file
 func LoadConfig() (*Config, error) {
-	data, err := os.ReadFile(ConfigPath)
+	data, err := os.ReadFile(constants.ContainerProxyConfigPath())
 	if err != nil {
 		return nil, err
 	}

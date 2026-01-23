@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-)
 
-const HijackerDir = "/opt/ccyolo/bin"
+	"ccyolo/internal/constants"
+)
 
 // GetUniqueCommands extracts unique base commands from the runOnHost patterns
 // For example: ["git", "npx ccstatusline"] -> ["git", "npx"]
@@ -34,7 +34,7 @@ func GetUniqueCommands(patterns []string) []string {
 // CreateHijackers creates hijacker scripts for each unique command
 func CreateHijackers(commands []string) error {
 	// Ensure the hijacker directory exists
-	if err := os.MkdirAll(HijackerDir, 0755); err != nil {
+	if err := os.MkdirAll(constants.HijackerDir, 0755); err != nil {
 		return fmt.Errorf("failed to create hijacker directory: %w", err)
 	}
 
@@ -49,7 +49,7 @@ func CreateHijackers(commands []string) error {
 
 // createHijacker creates a single hijacker script
 func createHijacker(cmd string) error {
-	scriptPath := filepath.Join(HijackerDir, cmd)
+	scriptPath := filepath.Join(constants.HijackerDir, cmd)
 
 	// The hijacker script calls ccproxy --exec with the full command
 	// It passes through all arguments, properly quoted to preserve spaces/special chars

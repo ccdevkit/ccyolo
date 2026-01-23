@@ -6,13 +6,9 @@ import (
 	"net"
 	"sync"
 	"time"
-)
 
-// LogRequest is the JSON request for logging to the host
-type LogRequest struct {
-	Type    string `json:"type"`
-	Message string `json:"message"`
-}
+	"ccyolo/internal/protocol"
+)
 
 // Logger handles debug logging for ccproxy
 type Logger struct {
@@ -54,7 +50,7 @@ func (l *Logger) sendLog(message string) {
 	defer conn.Close()
 
 	// Send log request
-	req := LogRequest{
+	req := protocol.LogRequest{
 		Type:    "log",
 		Message: message,
 	}

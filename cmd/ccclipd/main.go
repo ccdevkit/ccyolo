@@ -7,24 +7,25 @@ import (
 	"net"
 	"os"
 	"os/exec"
+
+	"ccyolo/internal/constants"
 )
 
 const (
-	defaultPort   = "9999"
 	responseOK    = byte(0x00)
 	responseError = byte(0x01)
 )
 
 func main() {
-	port := os.Getenv("CCYOLO_CLIP_PORT")
+	port := os.Getenv(constants.EnvClipboardPort)
 	if port == "" {
-		port = defaultPort
+		port = constants.DefaultClipboardPort
 	}
 
 	// Ensure DISPLAY is set for xclip
-	display := os.Getenv("DISPLAY")
+	display := os.Getenv(constants.EnvDisplay)
 	if display == "" {
-		os.Setenv("DISPLAY", ":99")
+		os.Setenv(constants.EnvDisplay, constants.DefaultXDisplay)
 	}
 
 	listener, err := net.Listen("tcp", ":"+port)

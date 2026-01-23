@@ -11,6 +11,9 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"ccyolo/internal/constants"
+	"ccyolo/internal/protocol"
 )
 
 // DebugFunc is a function for debug logging
@@ -86,19 +89,6 @@ func (s *Server) acceptLoop() {
 	}
 }
 
-// ExecRequest is the JSON request for command execution
-type ExecRequest struct {
-	Type    string `json:"type"`
-	Command string `json:"command"`
-	Cwd     string `json:"cwd"`
-}
-
-// LogRequest is the JSON request for logging from the container
-type LogRequest struct {
-	Type    string `json:"type"`
-	Message string `json:"message"`
-}
-
 func (s *Server) handleConnection(conn net.Conn) {
 	defer s.wg.Done()
 	defer conn.Close()
@@ -117,7 +107,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	trimmedLine := bytes.TrimSpace(firstLine)
 
 	// Check for exec request
-	var execReq ExecRequest
+	var execReq protocol.ExecRequest
 	if err := json.Unmarshal(trimmedLine, &execReq); err == nil && execReq.Type == "exec" {
 		s.debug("Handling exec request: %s", execReq.Command)
 		s.handleExec(conn, reader, &execReq)
@@ -125,7 +115,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 
 	// Check for log request
-	var logReq LogRequest
+	var logReq protocol.LogRequest
 	if err := json.Unmarshal(trimmedLine, &logReq); err == nil && logReq.Type == "log" {
 		s.handleLog(&logReq)
 		return
@@ -148,7 +138,7 @@ func shellCommand(command string) *exec.Cmd {
 	return exec.Command("sh", "-c", command)
 }
 
-func (s *Server) handleExec(conn net.Conn, reader *bufio.Reader, req *ExecRequest) {
+func (s *Server) handleExec(conn net.Conn, reader *bufio.Reader, req *protocol.ExecRequest) {
 	s.debug("[host] Executing on host: %s (cwd: %s)", req.Command, req.Cwd)
 
 	// Execute the command on the host
@@ -185,7 +175,7 @@ func (s *Server) handleExec(conn net.Conn, reader *bufio.Reader, req *ExecReques
 	conn.Write(output)
 }
 
-func (s *Server) handleLog(req *LogRequest) {
+func (s *Server) handleLog(req *protocol.LogRequest) {
 	// Forward the log message to the debug function
 	// The [container] prefix distinguishes container logs from host logs
 	s.debug("[container] %s", req.Message)
@@ -215,14 +205,12 @@ func (s *Server) rewriteContainerPaths(data []byte) []byte {
 
 // rewritePathsInObject recursively walks a JSON object and rewrites container paths
 func (s *Server) rewritePathsInObject(obj map[string]any) {
-	const containerHome = "/home/claude"
-
 	for key, value := range obj {
 		switch v := value.(type) {
 		case string:
 			// Check if this string starts with the container home path
-			if strings.HasPrefix(v, containerHome) {
-				obj[key] = s.homeDir + strings.TrimPrefix(v, containerHome)
+			if strings.HasPrefix(v, constants.ContainerHome) {
+				obj[key] = s.homeDir + strings.TrimPrefix(v, constants.ContainerHome)
 			}
 		case map[string]any:
 			// Recurse into nested objects
@@ -230,8 +218,8 @@ func (s *Server) rewritePathsInObject(obj map[string]any) {
 		case []any:
 			// Handle arrays
 			for i, item := range v {
-				if str, ok := item.(string); ok && strings.HasPrefix(str, containerHome) {
-					v[i] = s.homeDir + strings.TrimPrefix(str, containerHome)
+				if str, ok := item.(string); ok && strings.HasPrefix(str, constants.ContainerHome) {
+					v[i] = s.homeDir + strings.TrimPrefix(str, constants.ContainerHome)
 				} else if nested, ok := item.(map[string]any); ok {
 					s.rewritePathsInObject(nested)
 				}

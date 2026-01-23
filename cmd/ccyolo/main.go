@@ -13,6 +13,7 @@ import (
 	"ccyolo/internal/args"
 	"ccyolo/internal/claude"
 	"ccyolo/internal/clipboard"
+	"ccyolo/internal/constants"
 	"ccyolo/internal/docker"
 	"ccyolo/internal/hostexec"
 	"ccyolo/internal/session"
@@ -22,31 +23,19 @@ import (
 // Version is set at build time via ldflags
 var Version = "dev"
 
-var verbose bool
-var logFile string
-var passthrough []string
-
-const (
-	containerBridgeDir = "/home/claude/.ccyolo-bridge"
-)
-
-// findFreePort finds an available TCP port by binding to port 0
-func findFreePort() (string, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return "", err
-	}
-	defer listener.Close()
-	port := listener.Addr().(*net.TCPAddr).Port
-	return fmt.Sprintf("%d", port), nil
+// Config holds ccyolo configuration parsed from command-line arguments
+type Config struct {
+	Verbose     bool
+	LogFile     string
+	Passthrough []string
+	ClaudeArgs  []string
 }
-
 
 var logger *log.Logger
 
-func initLogger() (*os.File, error) {
-	if logFile != "" {
-		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+func initLogger(cfg *Config) (*os.File, error) {
+	if cfg.LogFile != "" {
+		f, err := os.OpenFile(cfg.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open log file: %w", err)
 		}
@@ -100,15 +89,14 @@ func splitArgs(args []string) (ccyoloArgs []string, claudeArgs []string) {
 }
 
 func debug(format string, args ...any) {
-	if verbose {
+	if logger != nil {
 		logger.Printf("[DEBUG] "+format, args...)
 	}
 }
 
 // extractPassthroughArgs extracts -pt:<cmd> and --passthrough:<cmd> args,
-// returning the remaining args for the flag package.
-func extractPassthroughArgs(args []string) []string {
-	var remaining []string
+// returning the passthrough commands and remaining args for the flag package.
+func extractPassthroughArgs(args []string) (passthrough []string, remaining []string) {
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "-pt:") {
 			cmd := strings.TrimPrefix(arg, "-pt:")
@@ -124,14 +112,35 @@ func extractPassthroughArgs(args []string) []string {
 			remaining = append(remaining, arg)
 		}
 	}
-	return remaining
+	return passthrough, remaining
 }
 
-// parseCcyoloFlags parses ccyolo-specific flags using the flag package.
-// Returns true if the program should exit (e.g., --help was shown).
-func parseCcyoloFlags(args []string) bool {
-	// First extract passthrough args (colon syntax not supported by flag package)
-	args = extractPassthroughArgs(args)
+// ParseConfig parses command-line arguments and returns a Config.
+// Returns (nil, nil) if program should exit normally (e.g., --help shown).
+// Returns (nil, error) if parsing failed.
+func ParseConfig(osArgs []string) (*Config, error) {
+	// Check for --help before splitting (special case: no -- required)
+	for _, arg := range osArgs {
+		if arg == "--help" || arg == "-h" {
+			printHelp()
+			return nil, nil
+		}
+		// Stop at -- to avoid catching claude's --help
+		if arg == "--" {
+			break
+		}
+	}
+
+	// Split args at "--": before goes to ccyolo, after goes to claude
+	ccyoloArgs, claudeArgs := splitArgs(osArgs)
+
+	// Extract passthrough args (colon syntax not supported by flag package)
+	passthrough, ccyoloArgs := extractPassthroughArgs(ccyoloArgs)
+
+	cfg := &Config{
+		ClaudeArgs:  claudeArgs,
+		Passthrough: passthrough,
+	}
 
 	fs := flag.NewFlagSet("ccyolo", flag.ContinueOnError)
 	fs.Usage = func() {} // Suppress default usage, we handle --help ourselves
@@ -141,151 +150,47 @@ func parseCcyoloFlags(args []string) bool {
 	fs.BoolVar(&showHelp, "help", false, "")
 	fs.BoolVar(&showHelp, "h", false, "")
 	fs.BoolVar(&showVersion, "version", false, "")
-	fs.BoolVar(&verbose, "v", false, "Enable verbose debug logging")
-	fs.BoolVar(&verbose, "verbose", false, "Enable verbose debug logging")
-	fs.StringVar(&logFile, "log", "", "Path to log file (when set with -v, logs go to file instead of stdout)")
+	fs.BoolVar(&cfg.Verbose, "v", false, "Enable verbose debug logging")
+	fs.BoolVar(&cfg.Verbose, "verbose", false, "Enable verbose debug logging")
+	fs.StringVar(&cfg.LogFile, "log", "", "Path to log file (when set with -v, logs go to file instead of stdout)")
 
-	if err := fs.Parse(args); err != nil {
-		// Unknown flag - print help and exit
+	if err := fs.Parse(ccyoloArgs); err != nil {
 		printHelp()
-		os.Exit(1)
+		return nil, fmt.Errorf("failed to parse flags: %w", err)
 	}
 
 	if showHelp {
 		printHelp()
-		return true
+		return nil, nil
 	}
 
 	if showVersion {
 		fmt.Printf("ccyolo %s\n", Version)
-		return true
+		return nil, nil
 	}
 
 	// If --log is set, enable verbose mode
-	if logFile != "" {
-		verbose = true
+	if cfg.LogFile != "" {
+		cfg.Verbose = true
 	}
 
-	return false
+	return cfg, nil
 }
 
-func main() {
-	// Set version in claude package
-	claude.Version = Version
-
-	// Check for --help before splitting (special case: no -- required)
-	for _, arg := range os.Args[1:] {
-		if arg == "--help" || arg == "-h" {
-			printHelp()
-			os.Exit(0)
-		}
-		// Stop at -- to avoid catching claude's --help
-		if arg == "--" {
-			break
-		}
-	}
-
-	// Split args at "--": before goes to ccyolo, after goes to claude
-	ccyoloArgs, remainingArgs := splitArgs(os.Args[1:])
-	if parseCcyoloFlags(ccyoloArgs) {
-		os.Exit(0)
-	}
-
-	// Initialize logger
-	logFileHandle, err := initLogger()
+// findFreePort finds an available TCP port by binding to port 0
+func findFreePort() (string, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return "", err
 	}
-	if logFileHandle != nil {
-		defer logFileHandle.Close()
-	}
+	defer listener.Close()
+	port := listener.Addr().(*net.TCPAddr).Port
+	return fmt.Sprintf("%d", port), nil
+}
 
-	debug("ccyolo starting")
-	debug("Remaining args: %v", remainingArgs)
-	debug("Passthrough: %q", passthrough)
-	if logFile != "" {
-		debug("Logging to: %s", logFile)
-	}
-
-	// Process args: extract session-id, find paths to bind
-	processed, err := args.Process(remainingArgs)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error processing arguments: %v\n", err)
-		os.Exit(1)
-	}
-	debug("Processed args: PassArgs=%v, ExtraMounts=%d", processed.PassArgs, len(processed.ExtraMounts))
-
-	// Get cwd early
-	cwd, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting working directory: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Create our temp session (always with a new UUID for our files)
-	// Note: We never pass --session-id to Claude - it manages its own sessions.
-	// Our temp dir UUID is just for organizing ccyolo's ephemeral files.
-	sess, err := session.New()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating session: %v\n", err)
-		os.Exit(1)
-	}
-	defer sess.Cleanup()
-	debug("Temp session created: %s", sess.ID())
-	debug("Session temp dir: %s", sess.TempDir())
-
-	// Get home directory for the hostexec server
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting home directory: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Start the TCP server for host-side command execution
-	server, err := hostexec.Start(homeDir, cwd, debug)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error starting hostexec server: %v\n", err)
-		os.Exit(1)
-	}
-	defer server.Stop()
-	debug("TCP server started on port %d", server.Port())
-
-	// Write the settings file for the container with the server port
-	if err := sess.WriteSettings(server.Port()); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing settings: %v\n", err)
-		os.Exit(1)
-	}
-	debug("Settings written to: %s", sess.SettingsPath())
-
-	// Always write proxy config (needed for ccdebug even without passthrough)
-	if err := sess.WriteProxyConfig(server.Port(), passthrough, verbose); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing proxy config: %v\n", err)
-		os.Exit(1)
-	}
-	proxyConfigPath := sess.ProxyConfigPath()
-	debug("Proxy config written to: %s", proxyConfigPath)
-
-	// Write system prompt only if we have passthrough patterns
-	systemPromptPath := ""
-	if len(passthrough) > 0 {
-		if err := sess.WriteSystemPrompt(passthrough); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing system prompt: %v\n", err)
-			os.Exit(1)
-		}
-		systemPromptPath = sess.SystemPromptPath()
-		debug("System prompt written to: %s", systemPromptPath)
-	}
-
-	token, err := claude.CaptureToken(debug)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Set up clipboard and image drag-drop support
-	var stdinReader io.Reader // nil means use os.Stdin directly in RunSpec
-	bridgeDir := ""
+// setupClipboard initializes clipboard support and returns the stdin reader,
+// bridge directory, clipboard port, and any errors.
+func setupClipboard(homeDir string) (stdinReader io.Reader, bridgeDir string, clipboardPort string, err error) {
 	clipboardEnabled := false
 
 	// Set clipboard debug function before init
@@ -300,19 +205,20 @@ func main() {
 	}
 
 	// Create bridge directory for file drag-drop
-	bridgeDir = filepath.Join(homeDir, ".ccyolo-bridge")
+	bridgeDir = filepath.Join(homeDir, constants.BridgeDirName)
 	if err := os.MkdirAll(bridgeDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Failed to create bridge directory: %v\n", err)
+		return nil, "", "", fmt.Errorf("failed to create bridge directory: %w", err)
 	}
 	debug("Bridge directory: %s", bridgeDir)
 
 	// Find a free port for clipboard daemon
-	clipboardPort, err := findFreePort()
+	clipboardPort, err = findFreePort()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Failed to find free port for clipboard: %v\n", err)
+		debug("Warning: Failed to find free port for clipboard: %v", err)
 		clipboardEnabled = false
+	} else {
+		debug("Clipboard port: %s", clipboardPort)
 	}
-	debug("Clipboard port: %s", clipboardPort)
 
 	// Create clipboard syncer (will connect to container daemon) - only if clipboard works
 	var clipboardSyncer stdin.ClipboardSyncer
@@ -321,45 +227,178 @@ func main() {
 	}
 
 	// Create stdin interceptor (always enabled for file drag-drop, clipboard optional)
-	stdinReader = stdin.NewInterceptor(os.Stdin, clipboardSyncer, bridgeDir, containerBridgeDir, debug)
+	stdinReader = stdin.NewInterceptor(os.Stdin, clipboardSyncer, bridgeDir, constants.ContainerBridgeDir, debug)
 	debug("Stdin interceptor created")
 
-	spec, err := claude.GetContainerSpec(token, sess.SettingsPath(), proxyConfigPath, systemPromptPath, homeDir, cwd, processed.PassArgs, processed.ExtraMounts)
+	return stdinReader, bridgeDir, clipboardPort, nil
+}
+
+// writeSessionFiles writes settings, proxy config, and system prompt files.
+// Returns the proxy config path and system prompt path.
+func writeSessionFiles(sess *session.Session, serverPort int, passthrough []string, verbose bool) (proxyConfigPath, systemPromptPath string, err error) {
+	// Write the settings file for the container with the server port
+	if err := sess.WriteSettings(serverPort); err != nil {
+		return "", "", fmt.Errorf("failed to write settings: %w", err)
+	}
+	debug("Settings written to: %s", sess.SettingsPath())
+
+	// Always write proxy config (needed for ccdebug even without passthrough)
+	if err := sess.WriteProxyConfig(serverPort, passthrough, verbose); err != nil {
+		return "", "", fmt.Errorf("failed to write proxy config: %w", err)
+	}
+	proxyConfigPath = sess.ProxyConfigPath()
+	debug("Proxy config written to: %s", proxyConfigPath)
+
+	// Write system prompt only if we have passthrough patterns
+	if len(passthrough) > 0 {
+		if err := sess.WriteSystemPrompt(passthrough); err != nil {
+			return "", "", fmt.Errorf("failed to write system prompt: %w", err)
+		}
+		systemPromptPath = sess.SystemPromptPath()
+		debug("System prompt written to: %s", systemPromptPath)
+	}
+
+	return proxyConfigPath, systemPromptPath, nil
+}
+
+// buildContainerSpec creates the Docker container specification.
+func buildContainerSpec(token, settingsPath, proxyConfigPath, systemPromptPath, homeDir, cwd string,
+	passArgs []string, extraMounts []docker.Mount, bridgeDir, clipboardPort string) (docker.ContainerSpec, error) {
+
+	spec, err := claude.GetContainerSpec(token, settingsPath, proxyConfigPath, systemPromptPath, homeDir, cwd, passArgs, extraMounts)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating container spec: %v\n", err)
-		os.Exit(1)
+		return docker.ContainerSpec{}, fmt.Errorf("failed to create container spec: %w", err)
 	}
 
 	// Forward terminal env vars for proper color support
-	if term := os.Getenv("TERM"); term != "" {
-		spec.Env = append(spec.Env, docker.EnvVar{Name: "TERM", Value: term})
+	if term := os.Getenv(constants.EnvTerm); term != "" {
+		spec.Env = append(spec.Env, docker.EnvVar{Name: constants.EnvTerm, Value: term})
 	}
-	if colorterm := os.Getenv("COLORTERM"); colorterm != "" {
-		spec.Env = append(spec.Env, docker.EnvVar{Name: "COLORTERM", Value: colorterm})
+	if colorterm := os.Getenv(constants.EnvColorTerm); colorterm != "" {
+		spec.Env = append(spec.Env, docker.EnvVar{Name: constants.EnvColorTerm, Value: colorterm})
 	}
 
 	// Add clipboard and bridge configuration
-	// Add clipboard port env var
-	spec.Env = append(spec.Env, docker.EnvVar{Name: "CCYOLO_CLIP_PORT", Value: clipboardPort})
-	// Add DISPLAY for xclip
-	spec.Env = append(spec.Env, docker.EnvVar{Name: "DISPLAY", Value: ":99"})
+	spec.Env = append(spec.Env, docker.EnvVar{Name: constants.EnvClipboardPort, Value: clipboardPort})
+	spec.Env = append(spec.Env, docker.EnvVar{Name: constants.EnvDisplay, Value: constants.DefaultXDisplay})
+
 	// Add port mapping for clipboard daemon
 	spec.Ports = append(spec.Ports, docker.PortMapping{
 		Host:      clipboardPort,
 		Container: clipboardPort,
 	})
+
 	// Add bridge directory mount
 	if bridgeDir != "" {
 		spec.Mounts = append(spec.Mounts, docker.Mount{
 			Host:      bridgeDir,
-			Container: containerBridgeDir,
+			Container: constants.ContainerBridgeDir,
 			ReadOnly:  false,
 			CreateDir: true,
 		})
 	}
 	debug("Added clipboard environment, port mapping, and mounts")
 
-	if err := docker.RunSpec(spec, stdinReader, debug); err != nil {
+	return spec, nil
+}
+
+func run() error {
+	cfg, err := ParseConfig(os.Args[1:])
+	if err != nil {
+		return err
+	}
+	if cfg == nil {
+		// Normal exit (--help or --version shown)
+		return nil
+	}
+
+	// Set version in claude package
+	claude.Version = Version
+
+	// Initialize logger
+	logFileHandle, err := initLogger(cfg)
+	if err != nil {
+		return err
+	}
+	if logFileHandle != nil {
+		defer logFileHandle.Close()
+	}
+
+	// Only log if verbose is enabled
+	if cfg.Verbose {
+		debug("ccyolo starting")
+		debug("Claude args: %v", cfg.ClaudeArgs)
+		debug("Passthrough: %q", cfg.Passthrough)
+		if cfg.LogFile != "" {
+			debug("Logging to: %s", cfg.LogFile)
+		}
+	}
+
+	// Process args: extract session-id, find paths to bind
+	processed, err := args.Process(cfg.ClaudeArgs)
+	if err != nil {
+		return fmt.Errorf("failed to process arguments: %w", err)
+	}
+	debug("Processed args: PassArgs=%v, ExtraMounts=%d", processed.PassArgs, len(processed.ExtraMounts))
+
+	// Get cwd and home directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	// Create temp session for ccyolo's ephemeral files
+	sess, err := session.New()
+	if err != nil {
+		return fmt.Errorf("failed to create session: %w", err)
+	}
+	defer sess.Cleanup()
+	debug("Temp session created: %s", sess.ID())
+	debug("Session temp dir: %s", sess.TempDir())
+
+	// Start the TCP server for host-side command execution
+	server, err := hostexec.Start(homeDir, cwd, debug)
+	if err != nil {
+		return fmt.Errorf("failed to start hostexec server: %w", err)
+	}
+	defer server.Stop()
+	debug("TCP server started on port %d", server.Port())
+
+	// Write session files (settings, proxy config, system prompt)
+	proxyConfigPath, systemPromptPath, err := writeSessionFiles(sess, server.Port(), cfg.Passthrough, cfg.Verbose)
+	if err != nil {
+		return err
+	}
+
+	// Capture OAuth token
+	token, err := claude.CaptureToken(debug)
+	if err != nil {
+		return err
+	}
+
+	// Set up clipboard and stdin interceptor
+	stdinReader, bridgeDir, clipboardPort, err := setupClipboard(homeDir)
+	if err != nil {
+		return err
+	}
+
+	// Build container spec
+	spec, err := buildContainerSpec(token, sess.SettingsPath(), proxyConfigPath, systemPromptPath,
+		homeDir, cwd, processed.PassArgs, processed.ExtraMounts, bridgeDir, clipboardPort)
+	if err != nil {
+		return err
+	}
+
+	return docker.RunSpec(spec, stdinReader, debug)
+}
+
+func main() {
+	if err := run(); err != nil {
 		if exitErr, ok := err.(*docker.ExitError); ok {
 			os.Exit(exitErr.Code)
 		}
