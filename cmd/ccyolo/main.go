@@ -41,17 +41,6 @@ func findFreePort() (string, error) {
 	return fmt.Sprintf("%d", port), nil
 }
 
-// stringSliceFlag allows a flag to be specified multiple times
-type stringSliceFlag []string
-
-func (s *stringSliceFlag) String() string {
-	return strings.Join(*s, ", ")
-}
-
-func (s *stringSliceFlag) Set(value string) error {
-	*s = append(*s, value)
-	return nil
-}
 
 var logger *log.Logger
 
@@ -81,18 +70,19 @@ If "--" is absent, all arguments are passed to claude.
 To see claude's help: ccyolo -- --help
 
 ccyolo flags:
-  -v, --verbose         Enable debug logging to stderr
-  --log <path>          Write debug logs to file (implies -v)
-  --passthrough <cmd>   Run commands matching prefix on host (repeatable)
-  -pt <cmd>             Short for --passthrough
-  --version             Print ccyolo version
+  -v, --verbose           Enable debug logging to stderr
+  --log <path>            Write debug logs to file (implies -v)
+  -pt:<cmd>               Run commands matching prefix on host (repeatable)
+  --passthrough:<cmd>     Long form of -pt:<cmd>
+  --version               Print ccyolo version
 
 Examples:
-  ccyolo                          Start claude interactively
-  ccyolo -p "hello"               Pass prompt to claude
-  ccyolo -v -- -p "hello"         Debug mode with prompt
-  ccyolo --log /tmp/debug.log --  Log to file
-  ccyolo --pt git -- -p "status"  Run git commands on host
+  ccyolo                              Start claude interactively
+  ccyolo -p "hello"                   Pass prompt to claude
+  ccyolo -v -- -p "hello"             Debug mode with prompt
+  ccyolo --log /tmp/debug.log --      Log to file
+  ccyolo -pt:git -- -p "status"       Run git commands on host
+  ccyolo -pt:git -pt:docker -- -c     Multiple passthroughs
 `)
 }
 
@@ -115,9 +105,34 @@ func debug(format string, args ...any) {
 	}
 }
 
+// extractPassthroughArgs extracts -pt:<cmd> and --passthrough:<cmd> args,
+// returning the remaining args for the flag package.
+func extractPassthroughArgs(args []string) []string {
+	var remaining []string
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-pt:") {
+			cmd := strings.TrimPrefix(arg, "-pt:")
+			if cmd != "" {
+				passthrough = append(passthrough, cmd)
+			}
+		} else if strings.HasPrefix(arg, "--passthrough:") {
+			cmd := strings.TrimPrefix(arg, "--passthrough:")
+			if cmd != "" {
+				passthrough = append(passthrough, cmd)
+			}
+		} else {
+			remaining = append(remaining, arg)
+		}
+	}
+	return remaining
+}
+
 // parseCcyoloFlags parses ccyolo-specific flags using the flag package.
 // Returns true if the program should exit (e.g., --help was shown).
 func parseCcyoloFlags(args []string) bool {
+	// First extract passthrough args (colon syntax not supported by flag package)
+	args = extractPassthroughArgs(args)
+
 	fs := flag.NewFlagSet("ccyolo", flag.ContinueOnError)
 	fs.Usage = func() {} // Suppress default usage, we handle --help ourselves
 
@@ -129,8 +144,6 @@ func parseCcyoloFlags(args []string) bool {
 	fs.BoolVar(&verbose, "v", false, "Enable verbose debug logging")
 	fs.BoolVar(&verbose, "verbose", false, "Enable verbose debug logging")
 	fs.StringVar(&logFile, "log", "", "Path to log file (when set with -v, logs go to file instead of stdout)")
-	fs.Var((*stringSliceFlag)(&passthrough), "pt", "Command prefix to pass through to host (can be repeated)")
-	fs.Var((*stringSliceFlag)(&passthrough), "passthrough", "Command prefix to pass through to host (can be repeated)")
 
 	if err := fs.Parse(args); err != nil {
 		// Unknown flag - print help and exit
@@ -190,7 +203,7 @@ func main() {
 
 	debug("ccyolo starting")
 	debug("Remaining args: %v", remainingArgs)
-	debug("Passthrough: %v", passthrough)
+	debug("Passthrough: %q", passthrough)
 	if logFile != "" {
 		debug("Logging to: %s", logFile)
 	}
