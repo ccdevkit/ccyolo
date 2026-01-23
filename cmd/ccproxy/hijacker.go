@@ -52,11 +52,19 @@ func createHijacker(cmd string) error {
 	scriptPath := filepath.Join(HijackerDir, cmd)
 
 	// The hijacker script calls ccproxy --exec with the full command
-	// It passes through all arguments
+	// It passes through all arguments, properly quoted to preserve spaces/special chars
 	script := fmt.Sprintf(`#!/bin/bash
 # ccyolo hijacker for %s
 # Passes through to ccproxy which decides whether to proxy to host or run locally
-exec ccproxy --exec "%s $*"
+
+# Build command string with properly quoted arguments
+args="%s"
+for arg in "$@"; do
+    # Escape single quotes and wrap each arg in single quotes
+    escaped=$(printf "%%s" "$arg" | sed "s/'/'\\\\''/g")
+    args="$args '$escaped'"
+done
+exec ccproxy --exec "$args"
 `, cmd, cmd)
 
 	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
