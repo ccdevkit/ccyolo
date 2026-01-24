@@ -27,6 +27,7 @@ var Version = "dev"
 type Config struct {
 	Verbose     bool
 	LogFile     string
+	ClaudePath  string
 	Passthrough []string
 	ClaudeArgs  []string
 }
@@ -65,6 +66,7 @@ To see claude's help: ccyolo -- --help
 ccyolo flags:
   -v, --verbose           Enable debug logging to stderr
   --log <path>            Write debug logs to file (implies -v)
+  -c, --claude <path>     Path to claude CLI (default: claude in PATH)
   -pt:<cmd>               Run commands matching prefix on host (repeatable)
   --passthrough:<cmd>     Long form of -pt:<cmd>
   --version               Print ccyolo version
@@ -157,6 +159,8 @@ func ParseConfig(osArgs []string) (*Config, error) {
 	fs.BoolVar(&cfg.Verbose, "v", false, "Enable verbose debug logging")
 	fs.BoolVar(&cfg.Verbose, "verbose", false, "Enable verbose debug logging")
 	fs.StringVar(&cfg.LogFile, "log", "", "Path to log file (when set with -v, logs go to file instead of stdout)")
+	fs.StringVar(&cfg.ClaudePath, "c", "", "Path to claude CLI")
+	fs.StringVar(&cfg.ClaudePath, "claude", "", "Path to claude CLI")
 
 	if err := fs.Parse(ccyoloArgs); err != nil {
 		printHelp()
@@ -176,6 +180,11 @@ func ParseConfig(osArgs []string) (*Config, error) {
 	// If --log is set, enable verbose mode
 	if cfg.LogFile != "" {
 		cfg.Verbose = true
+	}
+
+	// Apply default for claude path if not specified
+	if cfg.ClaudePath == "" {
+		cfg.ClaudePath = "claude"
 	}
 
 	return cfg, nil
@@ -377,7 +386,7 @@ func run() error {
 	}
 
 	// Capture OAuth token
-	token, err := claude.CaptureToken(debug)
+	token, err := claude.CaptureToken(cfg.ClaudePath, debug)
 	if err != nil {
 		return err
 	}

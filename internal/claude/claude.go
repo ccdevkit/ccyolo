@@ -22,8 +22,9 @@ type DebugFunc func(format string, args ...any)
 
 // CaptureToken starts a local HTTP server, runs claude with ANTHROPIC_BASE_URL
 // pointing to it, and captures the OAuth token from the Authorization header.
-func CaptureToken(debug DebugFunc) (string, error) {
-	debug("Starting token capture")
+// claudePath specifies the path to the claude CLI executable.
+func CaptureToken(claudePath string, debug DebugFunc) (string, error) {
+	debug("Starting token capture using claude at: %s", claudePath)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -51,7 +52,7 @@ func CaptureToken(debug DebugFunc) (string, error) {
 	}()
 
 	debug("Starting claude process")
-	cmd := exec.Command("claude")
+	cmd := exec.Command(claudePath)
 	cmd.Env = append(os.Environ(), "ANTHROPIC_BASE_URL="+baseURL)
 
 	if err := cmd.Start(); err != nil {
