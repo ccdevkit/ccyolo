@@ -43,9 +43,10 @@ const (
 
 // Docker configuration
 const (
-	DockerImageRegistry = "ghcr.io/ccdevkit/ccyolo"
-	DockerHostDNS       = "host.docker.internal"
-	DefaultXDisplay     = ":99"
+	DockerBaseImageRegistry = "ghcr.io/ccdevkit/ccyolo-base"
+	DockerLocalImageName    = "ccyolo-local"
+	DockerHostDNS           = "host.docker.internal"
+	DefaultXDisplay         = ":99"
 )
 
 // Environment variable names

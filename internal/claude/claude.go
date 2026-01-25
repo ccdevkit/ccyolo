@@ -14,8 +14,11 @@ import (
 	"ccyolo/internal/docker"
 )
 
-// Version is set by the main package
+// Version is set by the main package (base image version)
 var Version = constants.DefaultVersion
+
+// LocalImageName is set by main after ensuring the local image exists
+var LocalImageName string
 
 // DebugFunc is a function for debug logging
 type DebugFunc func(format string, args ...any)
@@ -145,8 +148,14 @@ func GetContainerSpec(token string, settingsPath string, proxyConfigPath string,
 	// Append extra args after our hardcoded args
 	cliArgs = append(cliArgs, extraArgs...)
 
+	// Use the local image if set, otherwise fall back to base image
+	imageName := LocalImageName
+	if imageName == "" {
+		imageName = fmt.Sprintf("%s:%s", constants.DockerBaseImageRegistry, Version)
+	}
+
 	return docker.ContainerSpec{
-		ImageName: fmt.Sprintf("%s:%s", constants.DockerImageRegistry, Version),
+		ImageName: imageName,
 		Mounts:    mounts,
 		Env:       env,
 		Args:      cliArgs,

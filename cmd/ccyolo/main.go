@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -16,6 +17,7 @@ import (
 	"ccyolo/internal/constants"
 	"ccyolo/internal/docker"
 	"ccyolo/internal/hostexec"
+	"ccyolo/internal/image"
 	"ccyolo/internal/session"
 	"ccyolo/internal/settings"
 	"ccyolo/internal/stdin"
@@ -333,6 +335,41 @@ func buildContainerSpec(token, settingsPath, proxyConfigPath, systemPromptPath, 
 	return spec, nil
 }
 
+// runUpdate handles the "update" command by running it on the host,
+// then rebuilding the local image if needed.
+func runUpdate(cfg *Config) error {
+	debug("Intercepted update command, running on host")
+
+	// Run claude update on host with passthrough stdin/stdout/stderr
+	cmd := exec.Command(cfg.ClaudePath, "update")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return &docker.ExitError{Code: exitErr.ExitCode()}
+		}
+		return fmt.Errorf("failed to run claude update: %w", err)
+	}
+
+	// Get the (potentially new) claude version
+	claudeVersion, err := image.GetClaudeVersion(cfg.ClaudePath, debug)
+	if err != nil {
+		return fmt.Errorf("failed to get claude version: %w", err)
+	}
+	debug("Claude version after update: %s", claudeVersion)
+
+	// Ensure local image exists for this version (build if needed)
+	localImageName, err := image.EnsureLocalImage(Version, claudeVersion, debug)
+	if err != nil {
+		return fmt.Errorf("failed to ensure local image: %w", err)
+	}
+	debug("Local image ready: %s", localImageName)
+
+	return nil
+}
+
 func run() error {
 	cfg, err := ParseConfig(os.Args[1:])
 	if err != nil {
@@ -360,6 +397,11 @@ func run() error {
 	debug("Passthrough: %q", cfg.Passthrough)
 	if cfg.LogFile != "" {
 		debug("Logging to: %s", cfg.LogFile)
+	}
+
+	// Intercept "update" command - run on host instead of container
+	if len(cfg.ClaudeArgs) > 0 && cfg.ClaudeArgs[0] == "update" {
+		return runUpdate(cfg)
 	}
 
 	// Process args: extract session-id, find paths to bind
@@ -403,11 +445,50 @@ func run() error {
 		return err
 	}
 
-	// Capture OAuth token
-	token, err := claude.CaptureToken(cfg.ClaudePath, debug)
-	if err != nil {
-		return err
+	// Capture OAuth token and detect Claude version in parallel
+	type tokenResult struct {
+		token string
+		err   error
 	}
+	type versionResult struct {
+		version string
+		err     error
+	}
+	tokenCh := make(chan tokenResult, 1)
+	versionCh := make(chan versionResult, 1)
+
+	go func() {
+		token, err := claude.CaptureToken(cfg.ClaudePath, debug)
+		tokenCh <- tokenResult{token, err}
+	}()
+
+	go func() {
+		version, err := image.GetClaudeVersion(cfg.ClaudePath, debug)
+		versionCh <- versionResult{version, err}
+	}()
+
+	// Wait for both to complete
+	tokenRes := <-tokenCh
+	versionRes := <-versionCh
+
+	if tokenRes.err != nil {
+		return tokenRes.err
+	}
+	token := tokenRes.token
+
+	if versionRes.err != nil {
+		return versionRes.err
+	}
+	claudeVersion := versionRes.version
+	debug("Claude version: %s, Base version: %s", claudeVersion, Version)
+
+	// Ensure local image exists (build if necessary)
+	localImageName, err := image.EnsureLocalImage(Version, claudeVersion, debug)
+	if err != nil {
+		return fmt.Errorf("failed to ensure local image: %w", err)
+	}
+	claude.LocalImageName = localImageName
+	debug("Using local image: %s", localImageName)
 
 	// Set up clipboard and stdin interceptor
 	stdinReader, bridgeDir, clipboardPort, err := setupClipboard(homeDir)

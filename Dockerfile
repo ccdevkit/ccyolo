@@ -30,7 +30,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xclip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://claude.ai/install.sh | bash
+# NOTE: Claude CLI is NOT installed in the base image.
+# ccyolo builds a local image (ccyolo-local:{baseVersion}-{claudeVersion})
+# that installs the specific Claude version from the user's host.
 
 # Copy binaries from builder
 COPY --from=builder /build/ccproxy /usr/local/bin/ccproxy
@@ -49,10 +51,8 @@ ARG USER_GID=${USER_UID}
 RUN groupadd --gid ${USER_GID} ${USERNAME} \
     && useradd --uid ${USER_UID} --gid ${USER_GID} -m ${USERNAME}
 
-# Set up claude for the non-root user
-# Create ~/.local/bin and copy claude there (expected by native install detection)
+# Create ~/.local/bin directory (claude will be installed here by derived image)
 RUN mkdir -p /home/${USERNAME}/.local/bin \
-    && cp /root/.local/bin/claude /home/${USERNAME}/.local/bin/claude \
     && chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}/.local
 
 # Create necessary directories and set ownership

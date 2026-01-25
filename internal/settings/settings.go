@@ -10,10 +10,10 @@ import (
 // discovered by walking up from cwd to root.
 type Settings struct {
 	// ClaudePath is the path to the claude CLI executable.
-	ClaudePath string `yaml:"claudePath" json:"claudePath"`
+	ClaudePath string `yaml:"claudePath"`
 
 	// Passthrough is a list of command prefixes to run on the host.
-	Passthrough []string `yaml:"passthrough" json:"passthrough"`
+	Passthrough []string `yaml:"passthrough"`
 }
 
 // settingsPath is the relative path for settings file discovery.
