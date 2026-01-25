@@ -28,11 +28,12 @@ var Version = "dev"
 
 // Config holds ccyolo configuration parsed from command-line arguments
 type Config struct {
-	Verbose     bool
-	LogFile     string
-	ClaudePath  string
-	Passthrough []string
-	ClaudeArgs  []string
+	Verbose      bool
+	LogFile      string
+	ClaudePath   string
+	ClaudeVersion string
+	Passthrough  []string
+	ClaudeArgs   []string
 }
 
 var logger *log.Logger
@@ -70,6 +71,7 @@ ccyolo flags:
   -v, --verbose           Enable debug logging to stderr
   --log <path>            Write debug logs to file (implies -v)
   -c, --claudePath <path> Path to claude CLI (default: claude in PATH)
+  --use <version>         Use specific Claude Code version (e.g., 2.1.16)
   -pt:<cmd>               Run commands matching prefix on host (repeatable)
   --passthrough:<cmd>     Long form of -pt:<cmd>
   --version               Print ccyolo version
@@ -85,6 +87,7 @@ Examples:
   ccyolo --log /tmp/debug.log --      Log to file
   ccyolo -pt:git -- -p "status"       Run git commands on host
   ccyolo -pt:git -pt:docker -- -c     Multiple passthroughs
+  ccyolo --use 2.1.16 --              Use specific Claude Code version
 `)
 }
 
@@ -175,6 +178,7 @@ func ParseConfig(osArgs []string) (*Config, error) {
 	fs.StringVar(&cfg.LogFile, "log", "", "Path to log file (when set with -v, logs go to file instead of stdout)")
 	fs.StringVar(&cfg.ClaudePath, "c", "", "Path to claude CLI")
 	fs.StringVar(&cfg.ClaudePath, "claudePath", "", "Path to claude CLI")
+	fs.StringVar(&cfg.ClaudeVersion, "use", "", "Use specific Claude Code version")
 
 	if err := fs.Parse(ccyoloArgs); err != nil {
 		printHelp()
@@ -445,7 +449,8 @@ func run() error {
 		return err
 	}
 
-	// Capture OAuth token and detect Claude version in parallel
+	// Capture OAuth token (always needed)
+	// Detect Claude version in parallel unless --use was specified
 	type tokenResult struct {
 		token string
 		err   error
@@ -462,10 +467,16 @@ func run() error {
 		tokenCh <- tokenResult{token, err}
 	}()
 
-	go func() {
-		version, err := image.GetClaudeVersion(cfg.ClaudePath, debug)
-		versionCh <- versionResult{version, err}
-	}()
+	// If --use was specified, use that version; otherwise detect from host
+	if cfg.ClaudeVersion != "" {
+		debug("Using specified Claude version: %s", cfg.ClaudeVersion)
+		versionCh <- versionResult{cfg.ClaudeVersion, nil}
+	} else {
+		go func() {
+			version, err := image.GetClaudeVersion(cfg.ClaudePath, debug)
+			versionCh <- versionResult{version, err}
+		}()
+	}
 
 	// Wait for both to complete
 	tokenRes := <-tokenCh
