@@ -95,6 +95,78 @@ When you paste or drag a file, ccyolo intercepts the input, copies the file into
 
 If you need clipboard support on ARM64, you can build from source on a native ARM64 machine with CGO enabled.
 
+## Settings
+
+ccyolo can be configured using a settings file in your project or home directory. Settings files are discovered by walking up from your current directory to root.
+
+### Settings file location
+
+Create a settings file at `.ccdevkit/ccyolo/settings.json` (or `.yaml`/`.yml`) in your project directory or home directory:
+
+```
+your-project/
+  .ccdevkit/
+    ccyolo/
+      settings.json    # Project-specific settings
+```
+
+Or in your home directory for global settings:
+
+```
+~/.ccdevkit/
+  ccyolo/
+    settings.json      # Global settings
+```
+
+### Available settings
+
+```json
+{
+  "claudePath": "/path/to/claude",
+  "passthrough": ["git", "docker", "gh"]
+}
+```
+
+| Setting | Type | Description |
+|---------|------|-------------|
+| `claudePath` | string | Path to the claude CLI executable (default: `claude` in PATH) |
+| `passthrough` | array | List of command prefixes to run on the host instead of in the container |
+
+### Settings priority
+
+Settings are merged with the following priority (highest to lowest):
+
+1. Command-line flags
+2. Project settings (`.ccdevkit/ccyolo/settings.json` in current directory or ancestors)
+3. Global settings (`~/.ccdevkit/ccyolo/settings.json`)
+4. Defaults
+
+### Example configurations
+
+**Minimal setup:**
+```json
+{
+  "passthrough": ["git"]
+}
+```
+
+**Advanced setup:**
+```json
+{
+  "claudePath": "/usr/local/bin/claude",
+  "passthrough": ["git", "docker", "gh", "npm"]
+}
+```
+
+**YAML format:**
+```yaml
+claudePath: /usr/local/bin/claude
+passthrough:
+  - git
+  - docker
+  - gh
+```
+
 ## Requirements
 
 - Docker
