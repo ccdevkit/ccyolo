@@ -48,26 +48,30 @@ ccyolo [claude-args]
 
 ccyolo -v -- -p "hello"              # Verbose mode
 ccyolo --log /tmp/debug.log -- -c    # Log to file
-ccyolo --pt git -- -p "git status"   # Run git on host instead of container
+ccyolo -pt:git -- -p "git status"    # Run git on host instead of container
+ccyolo --use 2.1.16 --               # Use specific Claude Code version
 ```
 
-| Flag                                | Description                                       |
-| ----------------------------------- | ------------------------------------------------- |
-| `-v`, `--verbose`                   | Enable debug logging to stderr                    |
-| `--log <path>`                      | Write debug logs to file                          |
-| `--pt <cmd>`, `--passthrough <cmd>` | Run commands matching prefix on host (repeatable) |
+| Flag                                  | Description                                       |
+| ------------------------------------- | ------------------------------------------------- |
+| `-v`, `--verbose`                     | Enable debug logging to stderr                    |
+| `--log <path>`                        | Write debug logs to file (implies -v)             |
+| `-c`, `--claudePath <path>`           | Path to claude CLI (default: claude in PATH)      |
+| `--use <version>`                     | Use specific Claude Code version (e.g., 2.1.16)   |
+| `-pt:<cmd>`, `--passthrough:<cmd>`    | Run commands matching prefix on host (repeatable) |
+| `--version`                           | Print ccyolo version                              |
 
 ### Passthrough
 
 By default, all commands run inside the container. This is usually fine, but some commands need to run on your host machine - things like `docker`, `gh`, or commands that need access to host resources.
 
-Use `--pt` to specify command prefixes that should run on the host:
+Use `-pt:` to specify command prefixes that should run on the host:
 
 ```bash
-ccyolo --pt git --pt docker -- -p "build and push the image"
+ccyolo -pt:git -pt:docker -- -p "build and push the image"
 ```
 
-This runs `git` and `docker` commands on your host, while everything else runs in the container. You can specify `--pt` multiple times.
+This runs `git` and `docker` commands on your host, while everything else runs in the container. You can specify `-pt:` multiple times.
 
 ## Clipboard & Drag-Drop
 
