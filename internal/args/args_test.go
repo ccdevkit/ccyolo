@@ -239,3 +239,94 @@ func TestProcessTildeExpansion(t *testing.T) {
 		t.Errorf("Expected 0 mounts for non-existent tilde path, got %d", len(got.ExtraMounts))
 	}
 }
+
+func TestProcessAppendSystemPromptFile(t *testing.T) {
+	// Create a temporary file for testing
+	tmpDir := t.TempDir()
+	promptFile := filepath.Join(tmpDir, "prompt.txt")
+	if err := os.WriteFile(promptFile, []byte("test prompt"), 0644); err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+
+	tests := []struct {
+		name                      string
+		args                      []string
+		wantPassArgsCount         int
+		wantHasAppendSystemPrompt bool
+		wantHasAppendSystemFile   bool
+		wantMountCount            int
+	}{
+		{
+			name:                      "append-system-prompt-file with existing file",
+			args:                      []string{"--append-system-prompt-file", promptFile},
+			wantPassArgsCount:         2,
+			wantHasAppendSystemPrompt: false,
+			wantHasAppendSystemFile:   true,
+			wantMountCount:            1,
+		},
+		{
+			name:                      "append-system-prompt-file with other args",
+			args:                      []string{"-v", "--append-system-prompt-file", promptFile, "--verbose"},
+			wantPassArgsCount:         4,
+			wantHasAppendSystemPrompt: false,
+			wantHasAppendSystemFile:   true,
+			wantMountCount:            1,
+		},
+		{
+			name:                      "append-system-prompt-file with non-existent file",
+			args:                      []string{"--append-system-prompt-file", "/nonexistent/prompt.txt"},
+			wantPassArgsCount:         2,
+			wantHasAppendSystemPrompt: false,
+			wantHasAppendSystemFile:   true,
+			wantMountCount:            0,
+		},
+		{
+			name:                      "append-system-prompt flag detected",
+			args:                      []string{"--append-system-prompt", "my prompt"},
+			wantPassArgsCount:         2,
+			wantHasAppendSystemPrompt: true,
+			wantHasAppendSystemFile:   false,
+			wantMountCount:            0,
+		},
+		{
+			name:                      "both flags provided",
+			args:                      []string{"--append-system-prompt", "my prompt", "--append-system-prompt-file", promptFile},
+			wantPassArgsCount:         4,
+			wantHasAppendSystemPrompt: true,
+			wantHasAppendSystemFile:   true,
+			wantMountCount:            1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Process(tt.args)
+			if err != nil {
+				t.Fatalf("Process() error = %v", err)
+			}
+
+			// Check PassArgs count
+			if len(got.PassArgs) != tt.wantPassArgsCount {
+				t.Errorf("Process() PassArgs length = %d, want %d, got %v", len(got.PassArgs), tt.wantPassArgsCount, got.PassArgs)
+			}
+
+			// Check flags
+			if got.HasAppendSystemPrompt != tt.wantHasAppendSystemPrompt {
+				t.Errorf("Process() HasAppendSystemPrompt = %v, want %v", got.HasAppendSystemPrompt, tt.wantHasAppendSystemPrompt)
+			}
+			if got.HasAppendSystemPromptFile != tt.wantHasAppendSystemFile {
+				t.Errorf("Process() HasAppendSystemPromptFile = %v, want %v", got.HasAppendSystemPromptFile, tt.wantHasAppendSystemFile)
+			}
+
+			// Check mount count
+			if len(got.ExtraMounts) != tt.wantMountCount {
+				t.Errorf("Process() ExtraMounts count = %d, want %d", len(got.ExtraMounts), tt.wantMountCount)
+			}
+
+			// Check mount is read-only if present
+			if tt.wantMountCount > 0 && !got.ExtraMounts[0].ReadOnly {
+				t.Errorf("Process() ExtraMounts[0].ReadOnly = false, want true for system prompt file")
+			}
+		})
+	}
+}

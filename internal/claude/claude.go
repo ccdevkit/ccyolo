@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"ccyolo/internal/args"
 	"ccyolo/internal/constants"
 	"ccyolo/internal/docker"
 )
@@ -81,7 +82,7 @@ func CaptureToken(claudePath string, debug DebugFunc) (string, error) {
 }
 
 // GetContainerSpec returns a ContainerSpec configured for running Claude in a container
-func GetContainerSpec(token string, settingsPath string, proxyConfigPath string, systemPromptPath string, homeDir string, cwd string, extraArgs []string, extraMounts []docker.Mount) (docker.ContainerSpec, error) {
+func GetContainerSpec(token string, settingsPath string, proxyConfigPath string, systemPromptPath string, homeDir string, cwd string, processedArgs args.ProcessedArgs) (docker.ContainerSpec, error) {
 	cckitDir := filepath.Join(homeDir, constants.CckitDirName)
 	if err := os.MkdirAll(cckitDir, 0755); err != nil {
 		return docker.ContainerSpec{}, fmt.Errorf("failed to create cckit directory: %w", err)
@@ -121,8 +122,13 @@ func GetContainerSpec(token string, settingsPath string, proxyConfigPath string,
 		})
 	}
 
-	// Add system prompt mount if provided
-	if systemPromptPath != "" {
+	// Decide how to add system prompt based on user's flags
+	// If user provided --append-system-prompt or --append-system-prompt-file, use that approach
+	// Otherwise use --append-system-prompt with $(cat ...)
+	useSystemPromptFile := processedArgs.HasAppendSystemPromptFile
+
+	// Add system prompt mount if provided and using file-based approach
+	if systemPromptPath != "" && useSystemPromptFile {
 		mounts = append(mounts, docker.Mount{
 			Host:      systemPromptPath,
 			Container: constants.ContainerSystemPromptPath(),
@@ -131,7 +137,7 @@ func GetContainerSpec(token string, settingsPath string, proxyConfigPath string,
 	}
 
 	// Add extra mounts from path arguments
-	mounts = append(mounts, extraMounts...)
+	mounts = append(mounts, processedArgs.ExtraMounts...)
 
 	env := []docker.EnvVar{
 		{Name: constants.EnvOAuthToken, Value: token, Secret: true},
@@ -141,12 +147,22 @@ func GetContainerSpec(token string, settingsPath string, proxyConfigPath string,
 	if settingsPath != "" {
 		cliArgs = append(cliArgs, "--settings", constants.ContainerSettingsPath())
 	}
+
+	// Add system prompt based on user's flags
 	if systemPromptPath != "" {
-		cliArgs = append(cliArgs, "--append-system-prompt-file", constants.ContainerSystemPromptPath())
+		if useSystemPromptFile {
+			// User provided --append-system-prompt-file, so use that approach
+			cliArgs = append(cliArgs, "--append-system-prompt-file", constants.ContainerSystemPromptPath())
+		} else if !processedArgs.HasAppendSystemPrompt {
+			// User didn't provide either flag, use --append-system-prompt with $(cat ...)
+			cliArgs = append(cliArgs, "--append-system-prompt", fmt.Sprintf("$(cat %s)", constants.ContainerSystemPromptPath()))
+		}
+		// If user provided --append-system-prompt, don't add our system prompt here
+		// They can combine it themselves in their args
 	}
 
 	// Append extra args after our hardcoded args
-	cliArgs = append(cliArgs, extraArgs...)
+	cliArgs = append(cliArgs, processedArgs.PassArgs...)
 
 	// Use the local image if set, otherwise fall back to base image
 	imageName := LocalImageName

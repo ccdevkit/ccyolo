@@ -12,19 +12,65 @@ import (
 
 // ProcessedArgs holds the result of parsing CLI arguments
 type ProcessedArgs struct {
-	PassArgs    []string       // args to pass through to claude
-	ExtraMounts []docker.Mount // mounts for path arguments that exist
+	PassArgs                  []string       // args to pass through to claude
+	ExtraMounts               []docker.Mount // mounts for path arguments that exist
+	HasAppendSystemPrompt     bool           // true if user provided --append-system-prompt
+	HasAppendSystemPromptFile bool           // true if user provided --append-system-prompt-file
 }
 
 // Process parses arguments and identifies paths to bind
 func Process(args []string) (ProcessedArgs, error) {
 	result := ProcessedArgs{
-		PassArgs:    args,
+		PassArgs:    []string{},
 		ExtraMounts: []docker.Mount{},
 	}
 
-	// Find paths to bind mount
-	for _, arg := range result.PassArgs {
+	// Track which paths we've already mounted to avoid duplicates
+	mountedPaths := make(map[string]bool)
+
+	// Process args and detect system prompt flags
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		// Check if this is --append-system-prompt or --append-system-prompt-file
+		if arg == "--append-system-prompt" {
+			result.HasAppendSystemPrompt = true
+		} else if arg == "--append-system-prompt-file" {
+			result.HasAppendSystemPromptFile = true
+
+			// Mount the file if it's the next arg and looks like a path
+			if i+1 < len(args) {
+				filePath := args[i+1]
+
+				// Expand ~ to home directory
+				expandedPath := filePath
+				if strings.HasPrefix(filePath, "~/") {
+					home, err := os.UserHomeDir()
+					if err == nil {
+						expandedPath = filepath.Join(home, filePath[2:])
+					}
+				}
+
+				// Convert to absolute path
+				absPath, err := filepath.Abs(expandedPath)
+				if err == nil {
+					// Add mount for the file if it exists
+					if _, err := os.Stat(absPath); err == nil {
+						result.ExtraMounts = append(result.ExtraMounts, docker.Mount{
+							Host:      absPath,
+							Container: absPath,
+							ReadOnly:  true,
+						})
+						mountedPaths[absPath] = true
+					}
+				}
+			}
+		}
+
+		// Add this arg to passArgs
+		result.PassArgs = append(result.PassArgs, arg)
+
+		// Check if it looks like a path for mounting
 		if looksLikePath(arg) {
 			// Expand ~ to home directory
 			expandedPath := arg
@@ -41,13 +87,16 @@ func Process(args []string) (ProcessedArgs, error) {
 				continue
 			}
 
-			// Check if path exists
+			// Check if path exists and not already mounted
 			if _, err := os.Stat(absPath); err == nil {
-				result.ExtraMounts = append(result.ExtraMounts, docker.Mount{
-					Host:      absPath,
-					Container: absPath,
-					ReadOnly:  false,
-				})
+				if !mountedPaths[absPath] {
+					result.ExtraMounts = append(result.ExtraMounts, docker.Mount{
+						Host:      absPath,
+						Container: absPath,
+						ReadOnly:  false,
+					})
+					mountedPaths[absPath] = true
+				}
 			}
 		}
 	}

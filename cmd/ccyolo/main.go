@@ -300,9 +300,9 @@ func writeSessionFiles(sess *session.Session, serverPort int, passthrough []stri
 
 // buildContainerSpec creates the Docker container specification.
 func buildContainerSpec(token, settingsPath, proxyConfigPath, systemPromptPath, homeDir, cwd string,
-	passArgs []string, extraMounts []docker.Mount, bridgeDir, clipboardPort string) (docker.ContainerSpec, error) {
+	processedArgs args.ProcessedArgs, bridgeDir, clipboardPort string) (docker.ContainerSpec, error) {
 
-	spec, err := claude.GetContainerSpec(token, settingsPath, proxyConfigPath, systemPromptPath, homeDir, cwd, passArgs, extraMounts)
+	spec, err := claude.GetContainerSpec(token, settingsPath, proxyConfigPath, systemPromptPath, homeDir, cwd, processedArgs)
 	if err != nil {
 		return docker.ContainerSpec{}, fmt.Errorf("failed to create container spec: %w", err)
 	}
@@ -509,7 +509,7 @@ func run() error {
 
 	// Build container spec
 	spec, err := buildContainerSpec(token, sess.SettingsPath(), proxyConfigPath, systemPromptPath,
-		homeDir, cwd, processed.PassArgs, processed.ExtraMounts, bridgeDir, clipboardPort)
+		homeDir, cwd, processed, bridgeDir, clipboardPort)
 	if err != nil {
 		return err
 	}

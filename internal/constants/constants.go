@@ -29,7 +29,7 @@ func ContainerSettingsPath() string {
 
 // ContainerSystemPromptPath returns the full path to system prompt in the container
 func ContainerSystemPromptPath() string {
-	return filepath.Join(ContainerTmpDir, SystemPromptFile)
+	return filepath.Join(ContainerBridgeDir, SystemPromptFile)
 }
 
 // Host directory names (relative to home)
