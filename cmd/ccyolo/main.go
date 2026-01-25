@@ -17,6 +17,7 @@ import (
 	"ccyolo/internal/docker"
 	"ccyolo/internal/hostexec"
 	"ccyolo/internal/session"
+	"ccyolo/internal/settings"
 	"ccyolo/internal/stdin"
 )
 
@@ -66,10 +67,14 @@ To see claude's help: ccyolo -- --help
 ccyolo flags:
   -v, --verbose           Enable debug logging to stderr
   --log <path>            Write debug logs to file (implies -v)
-  -c, --claude <path>     Path to claude CLI (default: claude in PATH)
+  -c, --claudePath <path> Path to claude CLI (default: claude in PATH)
   -pt:<cmd>               Run commands matching prefix on host (repeatable)
   --passthrough:<cmd>     Long form of -pt:<cmd>
   --version               Print ccyolo version
+
+Settings files (.ccdevkit/ccyolo/settings.{json,yaml,yml}) are loaded from
+cwd up to root, with closer files taking precedence. CLI flags override file
+settings. Passthrough arrays are merged (file + CLI).
 
 Examples:
   ccyolo                              Start claude interactively
@@ -137,15 +142,22 @@ func ParseConfig(osArgs []string) (*Config, error) {
 		}
 	}
 
+	// Load settings from filesystem first (lowest precedence)
+	fileSettings, err := settings.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load settings: %w", err)
+	}
+
 	// Split args at "--": before goes to ccyolo, after goes to claude
 	ccyoloArgs, claudeArgs := splitArgs(osArgs)
 
 	// Extract passthrough args (colon syntax not supported by flag package)
-	passthrough, ccyoloArgs := extractPassthroughArgs(ccyoloArgs)
+	cliPassthrough, ccyoloArgs := extractPassthroughArgs(ccyoloArgs)
 
 	cfg := &Config{
-		ClaudeArgs:  claudeArgs,
-		Passthrough: passthrough,
+		ClaudeArgs: claudeArgs,
+		// Start with file settings passthrough, CLI will be appended later
+		Passthrough: fileSettings.Passthrough,
 	}
 
 	fs := flag.NewFlagSet("ccyolo", flag.ContinueOnError)
@@ -160,7 +172,7 @@ func ParseConfig(osArgs []string) (*Config, error) {
 	fs.BoolVar(&cfg.Verbose, "verbose", false, "Enable verbose debug logging")
 	fs.StringVar(&cfg.LogFile, "log", "", "Path to log file (when set with -v, logs go to file instead of stdout)")
 	fs.StringVar(&cfg.ClaudePath, "c", "", "Path to claude CLI")
-	fs.StringVar(&cfg.ClaudePath, "claude", "", "Path to claude CLI")
+	fs.StringVar(&cfg.ClaudePath, "claudePath", "", "Path to claude CLI")
 
 	if err := fs.Parse(ccyoloArgs); err != nil {
 		printHelp()
@@ -182,7 +194,13 @@ func ParseConfig(osArgs []string) (*Config, error) {
 		cfg.Verbose = true
 	}
 
-	// Apply default for claude path if not specified
+	// Append CLI passthrough to file passthrough
+	cfg.Passthrough = append(cfg.Passthrough, cliPassthrough...)
+
+	// Apply defaults: CLI flag > file setting > hardcoded default
+	if cfg.ClaudePath == "" {
+		cfg.ClaudePath = fileSettings.ClaudePath
+	}
 	if cfg.ClaudePath == "" {
 		cfg.ClaudePath = "claude"
 	}
