@@ -43,6 +43,9 @@ All `claude` flags work as expected.
 ccyolo flags go before `--`, claude flags go after:
 
 ```bash
+ccyolo [ccyolo-flags] -- [claude-args]
+ccyolo [claude-args]
+
 ccyolo -v -- -p "hello"              # Verbose mode
 ccyolo --log /tmp/debug.log -- -c    # Log to file
 ccyolo --pt git -- -p "git status"   # Run git on host instead of container
