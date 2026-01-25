@@ -87,12 +87,13 @@ func BuildLocalImage(baseVersion, claudeVersion string, debug DebugFunc) error {
 	debug("Building local image: %s from base: %s", localImage, baseImage)
 
 	// Generate Dockerfile content
+	// Note: We don't set USER claude here - the entrypoint handles switching
+	// from root to claude via gosu, which allows ccproxy --setup to run first.
 	dockerfile := fmt.Sprintf(`FROM %s
 USER root
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- %s
 RUN cp /root/.local/bin/claude /home/claude/.local/bin/claude \
     && chown claude:claude /home/claude/.local/bin/claude
-USER claude
 `, baseImage, claudeVersion)
 
 	debug("Generated Dockerfile:\n%s", dockerfile)

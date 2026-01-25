@@ -37,6 +37,15 @@ func TestPrefixMatcher_Matches(t *testing.T) {
 		// Case sensitivity
 		{"case sensitive no match", "git", "Git status", false},
 		{"case sensitive no match upper", "Git", "git status", false},
+
+		// Quoted arguments (from hijacker scripts)
+		{"quoted single arg", "go build", "go 'build'", true},
+		{"quoted multiple args", "git commit", "git 'commit' '-m' 'message'", true},
+		{"quoted exact match", "git", "git", true},
+		{"quoted with spaces in arg", "git commit", "git 'commit' '-m' 'hello world'", true},
+		{"quoted no match", "go run", "go 'build'", false},
+		{"mixed quoted unquoted", "pnpm run", "pnpm 'run' dev", true},
+		{"quoted commit message with spaces", "git commit", "git 'commit' '-m' 'fix: handle multi-word commit messages'", true},
 	}
 
 	for _, tt := range tests {
